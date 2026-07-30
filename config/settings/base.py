@@ -44,6 +44,10 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
+# ⚠️ 必须在项目第一次 migrate 之前设定。一旦 auth 应用的迁移跑过，
+#    再换用户模型会遇到几乎无解的外键依赖问题（ADR-002）。
+AUTH_USER_MODEL = "accounts.User"
+
 ROOT_URLCONF = "config.urls"
 
 TEMPLATES = [
