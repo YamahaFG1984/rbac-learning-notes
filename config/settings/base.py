@@ -87,3 +87,21 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
+
+# --------------------------------------------------------------------------- #
+# 认证与会话（v0.7.0）
+# --------------------------------------------------------------------------- #
+
+LOGIN_URL = "accounts:login"
+LOGIN_REDIRECT_URL = "/accounts/departments/"
+LOGOUT_REDIRECT_URL = "accounts:login"
+
+SESSION_COOKIE_AGE = 7200  # 2 小时
+# 滑动过期：有操作就续期。代价是每个请求都写一次 session 存储
+# ——用数据库存 session 时这是真实的写压力，生产环境通常改用 Redis。
+SESSION_SAVE_EVERY_REQUEST = True
+SESSION_EXPIRE_AT_BROWSER_CLOSE = False
+
+# 登录失败锁定（FR-5.3）
+LOGIN_FAIL_MAX_ATTEMPTS = 5
+LOGIN_FAIL_LOCKOUT_SECONDS = 900  # 15 分钟

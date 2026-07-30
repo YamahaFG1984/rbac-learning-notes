@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}登录 · RBAC 教学系统{% endblock %}
+{% block content %}
+<div class="flex min-h-screen items-center justify-center px-4">
+  <div class="w-full max-w-sm">
+    <h1 class="mb-6 text-center text-2xl font-semibold text-gray-900">RBAC 教学系统</h1>
+    <form method="post" class="space-y-4 rounded-lg bg-white p-6 shadow">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ next }}">
+      {% if form.non_field_errors %}
+        <div class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {% for e in form.non_field_errors %}{{ e }}{% endfor %}
+        </div>
+      {% endif %}
+      {% for field in form %}
+        <div>
+          <label class="block text-sm font-medium text-gray-700">{{ field.label }}</label>
+          <div class="mt-1">{{ field }}</div>
+          {% if field.errors %}<p class="mt-1 text-sm text-red-600">{{ field.errors|striptags }}</p>{% endif %}
+        </div>
+      {% endfor %}
+      <button type="submit"
+              class="w-full rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700">
+        登录
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
