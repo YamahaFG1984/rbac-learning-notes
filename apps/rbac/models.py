@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from apps.common.models import TimestampedModel, TreeModel
@@ -112,3 +113,36 @@ class RolePermission(models.Model):
 
     def __str__(self):
         return f"{self.role} -> {self.permission}"
+
+
+class UserRole(models.Model):
+    """用户-角色绑定。
+
+    一个用户可以有多个角色，权限取**并集**（FR-4.1）——现实中一个人身兼两职，
+    自然是两份职责的权限都有，而不是只有交集那部分。
+
+    granted_by / granted_at 本 tag 只存不用，是给 v0.17.0 审计日志准备的。
+    """
+
+    # 用 settings.AUTH_USER_MODEL 字符串引用，不直接 import User，避免循环导入
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="user_roles"
+    )
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="user_roles")
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="授权人",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="granted_roles",
+    )
+    granted_at = models.DateTimeField("授权时间", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "用户角色"
+        verbose_name_plural = verbose_name
+        unique_together = [("user", "role")]
+
+    def __str__(self):
+        return f"{self.user} -> {self.role}"
