@@ -15,6 +15,7 @@
         <tr>
           <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">角色名称</th>
           <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">编码</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">继承</th>
           <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">数据范围</th>
           <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">状态</th>
           <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">操作</th>
@@ -28,12 +29,16 @@
             {% if role.is_builtin %}<span class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">内置</span>{% endif %}
           </td>
           <td class="px-4 py-2 font-mono text-xs text-gray-500">{{ role.code }}</td>
+          <td class="px-4 py-2 text-sm text-gray-600">
+            {% if role.inherits_from %}<span class="text-amber-600">继承自 {{ role.inherits_from.name }}</span>{% else %}—{% endif %}
+          </td>
           <td class="px-4 py-2 text-sm text-gray-600">{{ role.get_data_scope_display }}</td>
           <td class="px-4 py-2 text-sm">
             {% if role.is_active %}<span class="text-green-600">启用</span>
             {% else %}<span class="text-gray-400">停用</span>{% endif %}
           </td>
           <td class="space-x-2 whitespace-nowrap px-4 py-2 text-sm">
+            <a href="{% url 'rbac:role_effective_perms' role.pk %}" class="text-gray-600 hover:underline">有效权限</a>
             {% if 'system:role:assign_perm' in perms %}
             <a href="{% url 'rbac:role_perm_assign' role.pk %}" class="text-indigo-600 hover:underline">分配权限</a>
             {% endif %}
@@ -49,7 +54,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="px-4 py-6 text-center text-sm text-gray-400">暂无角色</td></tr>
+        <tr><td colspan="6" class="px-4 py-6 text-center text-sm text-gray-400">暂无角色</td></tr>
         {% endfor %}
       </tbody>
     </table>

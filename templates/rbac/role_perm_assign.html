@@ -3,7 +3,13 @@
 {% block content %}
 <div class="mx-auto max-w-3xl p-6">
   <h1 class="mb-1 text-xl font-semibold text-gray-900">分配权限</h1>
-  <p class="mb-4 text-sm text-gray-500">角色：{{ role.name }}（{{ role.code }}）</p>
+  <p class="mb-2 text-sm text-gray-500">角色：{{ role.name }}（{{ role.code }}）</p>
+  {% if has_inherited %}
+  <p class="mb-4 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+    灰色只读的项来自继承（{{ role.inherits_from.name }}），无法在此取消
+    ——那需要「负权限」，本项目不做。
+  </p>
+  {% endif %}
 
   <form method="post" class="rounded-lg bg-white p-6 shadow">
     {% csrf_token %}
@@ -21,8 +27,10 @@
           <input type="checkbox" name="permissions" value="{{ row.obj.pk }}"
                  data-id="{{ row.obj.pk }}" data-parent="{{ row.obj.parent_id|default:'' }}"
                  {% if row.checked %}checked{% endif %}
-                 class="h-4 w-4 rounded border-gray-300 text-indigo-600">
-          <span>{{ row.obj.name }}</span>
+                 {% if row.inherited %}disabled{% endif %}
+                 class="h-4 w-4 rounded border-gray-300 text-indigo-600 {% if row.inherited %}opacity-50{% endif %}">
+          <span class="{% if row.inherited %}text-gray-400{% endif %}">{{ row.obj.name }}</span>
+          {% if row.inherited %}<span class="text-xs text-amber-600">继承</span>{% endif %}
           {% if row.obj.code %}
             <span class="font-mono text-xs text-gray-400">{{ row.obj.code }}</span>
           {% else %}

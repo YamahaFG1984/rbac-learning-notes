@@ -13,6 +13,7 @@
 
 from typing import Iterable
 
+from django.conf import settings
 from django.db import transaction
 # django.urls.reverse 是「URL name -> 路径」的纯函数，不依赖 request/response，
 # 且 Web 层与 API 层都需要它。它在 ADR-013 的允许清单内——
@@ -56,6 +57,83 @@ ALL_PERMS = _AllPerms()
 
 
 # --------------------------------------------------------------------------- #
+# 角色展开（RBAC1）
+# --------------------------------------------------------------------------- #
+
+
+def expand_roles(roles: Iterable[Role]) -> set[Role]:
+    """把直接角色集合展开为「直接角色 + 全部祖先角色」。
+
+    单继承使得这只是一次向上遍历。语义固定为 child ⊇ parent：
+    拥有「客服主管」就自动拥有它 inherits_from 的「客服专员」的全部权限。
+
+    result 集合同时起两个作用（纵深防御）：
+      · 防环 —— 即使数据库里因为某种原因存在了环（比如绕过 clean() 直接
+        update()），展开也不会死循环。clean() 防止环被存进去，这里防止
+        已存在的环导致死循环，两道独立的防线。
+      · 去重剪枝 —— 多个角色共享同一祖先时，祖先只展开一次。
+    """
+    result: set[Role] = set()
+    for role in roles:
+        if role in result or not role.is_active:
+            continue
+        result.add(role)
+        current = role.inherits_from
+        depth = 0
+        while current is not None and depth < settings.RBAC_MAX_ROLE_DEPTH:
+            if current in result:
+                break  # 剪枝：这条链上面都展开过了
+            if current.is_active:
+                result.add(current)
+            current = current.inherits_from
+            depth += 1
+    return result
+
+
+def get_role_effective_codes(role) -> frozenset[str]:
+    """单个角色展开继承后的全部权限码。"""
+    return frozenset(
+        Permission.objects.filter(
+            role_permissions__role__in=expand_roles([role]),
+            is_active=True,
+            is_deprecated=False,
+        )
+        .exclude(code__isnull=True)
+        .exclude(code="")
+        .values_list("code", flat=True)
+        .distinct()
+    )
+
+
+def get_role_perm_sources(role) -> dict[str, Role]:
+    """权限码 -> 授予它的角色。用于回答「这个权限从哪来的」。
+
+    单继承的可解释性优势就体现在这里：答案永远是一条链，不是一张图。
+    从最远的祖先开始往回填，直接授予的会覆盖继承来的，
+    显示时优先展示「最近的来源」。
+    """
+    chain = []
+    current, depth = role, 0
+    while current is not None and depth <= settings.RBAC_MAX_ROLE_DEPTH:
+        chain.append(current)
+        current = current.inherits_from
+        depth += 1
+
+    sources: dict[str, Role] = {}
+    for ancestor in reversed(chain):  # 祖先 -> 自身
+        codes = (
+            Permission.objects.filter(
+                role_permissions__role=ancestor, is_active=True, is_deprecated=False
+            )
+            .exclude(code__isnull=True)
+            .values_list("code", flat=True)
+        )
+        for code in codes:
+            sources[code] = ancestor
+    return sources
+
+
+# --------------------------------------------------------------------------- #
 # 权限解析
 # --------------------------------------------------------------------------- #
 
@@ -63,8 +141,8 @@ ALL_PERMS = _AllPerms()
 def get_user_perm_codes(user) -> frozenset[str]:
     """解析用户的有效权限码集合。
 
-    v0.6.0 版本：不含缓存（v0.16.0）、不含角色继承（v0.12.0）。
-    先让逻辑对且看得懂——缓存是优化，优化必须建立在正确之上。
+    v0.12.0 起含角色继承。仍不含缓存（v0.16.0）——
+    缓存是优化，优化必须建立在正确之上。
     """
     if not user or not user.is_authenticated or not user.is_active:
         return frozenset()
@@ -72,17 +150,14 @@ def get_user_perm_codes(user) -> frozenset[str]:
     if user.is_superuser:
         return ALL_PERMS  # 短路，不查库
 
-    role_ids = list(
-        Role.objects.filter(user_roles__user=user, is_active=True).values_list(
-            "id", flat=True
-        )
-    )
-    if not role_ids:
+    direct_roles = Role.objects.filter(user_roles__user=user, is_active=True)
+    all_roles = expand_roles(direct_roles)  # ← RBAC0 -> RBAC1 的全部改动
+    if not all_roles:
         return frozenset()
 
     return frozenset(
         Permission.objects.filter(
-            role_permissions__role_id__in=role_ids,
+            role_permissions__role__in=all_roles,
             is_active=True,
             is_deprecated=False,
         )

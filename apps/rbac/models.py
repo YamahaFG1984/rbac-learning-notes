@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from apps.common.models import TimestampedModel, TreeModel
@@ -62,6 +63,20 @@ class Role(TimestampedModel):
     code = models.CharField("角色编码", max_length=64, unique=True)
     name = models.CharField("角色名称", max_length=64)
     description = models.TextField("描述", blank=True)
+    # ⚠️ 字段名刻意不叫 parent。
+    #
+    # 「父角色」在权限领域有两种相反的用法，会导致完全相反的实现。
+    # inherits_from 只有一种读法，语义固定为 **child ⊇ parent**：
+    # 「客服主管」的 inherits_from 是「客服专员」，主管拥有专员的全部权限。
+    inherits_from = models.ForeignKey(
+        "self",
+        verbose_name="继承自",
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="inheritors",
+        help_text="本角色将自动拥有所选角色的全部权限",
+    )
     # 默认取最窄的 SELF_ONLY 而非 ALL：默认值必须指向「出错时后果最轻」的方向。
     # 忘配数据范围 -> 看得太少（有人报障，会被修好）
     #             -> 看得太多（没有任何人会报障）
@@ -81,6 +96,36 @@ class Role(TimestampedModel):
 
     def __str__(self):
         return self.name
+
+    def clean(self):
+        super().clean()
+        if not self.inherits_from_id:
+            return
+        if self.pk and self.inherits_from_id == self.pk:
+            raise ValidationError({"inherits_from": "角色不能继承自己"})
+
+        seen = {self.pk}
+        current = self.inherits_from
+        depth = 0
+        while current is not None:
+            if current.pk in seen:
+                raise ValidationError({"inherits_from": "检测到角色继承环"})
+            depth += 1
+            if depth >= settings.RBAC_MAX_ROLE_DEPTH:
+                raise ValidationError(
+                    {
+                        "inherits_from": f"角色继承深度不得超过 {settings.RBAC_MAX_ROLE_DEPTH} 层"
+                    }
+                )
+            seen.add(current.pk)
+            current = current.inherits_from
+
+    def save(self, *args, **kwargs):
+        # ModelForm.is_valid() 会自动调 full_clean()，但 Model.save() 不会。
+        # 在 shell / 管理命令 / 数据迁移里直接 save()，环检测就不触发了。
+        # 代价是每次保存多一轮校验；收益是任何路径都挡得住。
+        self.full_clean(exclude=None, validate_unique=False)
+        return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
         # 视图层也会拦一道，但 shell / 管理命令 / admin 都能绕过视图。

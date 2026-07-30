@@ -11,4 +11,9 @@ urlpatterns = [
     path("roles/<int:pk>/edit/", views.role_update, name="role_update"),
     path("roles/<int:pk>/delete/", views.role_delete, name="role_delete"),
     path("roles/<int:pk>/permissions/", views.role_perm_assign, name="role_perm_assign"),
+    path(
+        "roles/<int:pk>/effective/",
+        views.role_effective_perms,
+        name="role_effective_perms",
+    ),
 ]

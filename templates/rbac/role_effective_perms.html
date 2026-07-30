@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}有效权限：{{ role.name }}{% endblock %}
+{% block page_title %}有效权限{% endblock %}
+{% block page_actions %}
+  <a href="{% url 'rbac:role_list' %}"
+     class="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">返回</a>
+{% endblock %}
+
+{% block content %}
+<div class="mb-4 rounded-lg bg-white p-4 shadow">
+  <p class="text-sm text-gray-500">角色：<span class="font-medium text-gray-900">{{ role.name }}</span></p>
+  <p class="mt-2 text-sm text-gray-500">
+    继承链：
+    {% for r in chain %}<span class="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs">{{ r.name }}</span>{% if not forloop.last %} <span class="text-gray-400">←</span> {% endif %}{% endfor %}
+  </p>
+  <p class="mt-2 text-sm text-gray-500">共 <strong>{{ rows|length }}</strong> 项有效权限</p>
+</div>
+
+<div class="overflow-x-auto rounded-lg bg-white shadow">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">权限码</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">名称</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">来源</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for row in rows %}
+      <tr>
+        <td class="px-4 py-2 font-mono text-xs text-gray-700">{{ row.code }}</td>
+        <td class="px-4 py-2 text-sm">{{ row.name }}</td>
+        <td class="px-4 py-2 text-sm">
+          {% if row.is_direct %}
+            <span class="text-gray-900">直接授予</span>
+          {% else %}
+            <span class="text-amber-600">继承自 {{ row.source.name }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="3" class="px-4 py-6 text-center text-sm text-gray-400">该角色没有任何权限</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
