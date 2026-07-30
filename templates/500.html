@@ -1,0 +1,13 @@
+{# ⚠️ 500 页面不走 context processor——请求上下文可能已经崩了。
+   这里不能出现 {{ user }}、不能 include 依赖 context 的片段，
+   否则出 500 时会再崩一次，日志里只剩一个二次异常，极难排查。
+   所以本页是纯静态 HTML，连 base 模板都不继承。 #}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>500 服务器错误</title></head>
+<body style="font-family: system-ui, sans-serif; text-align: center; padding-top: 15vh; color: #374151;">
+  <p style="font-size: 3.75rem; color: #d1d5db; margin: 0;">500</p>
+  <h1 style="font-size: 1.25rem; margin-top: 1rem;">服务器错误</h1>
+  <p style="font-size: 0.875rem; color: #6b7280;">请稍后重试，或联系系统管理员。</p>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{% extends "base_anon.html" %}
+{% block title %}404 未找到{% endblock %}
+{% block body %}
+<div class="flex min-h-screen items-center justify-center px-4">
+  <div class="text-center">
+    <p class="text-6xl font-semibold text-gray-300">404</p>
+    <h1 class="mt-4 text-xl font-semibold text-gray-900">页面或数据不存在</h1>
+    {# 数据权限范围外的记录也返回 404（不是 403），避免泄露记录存在性。
+       给用户一句提示，既不泄露信息又给了下一步动作。 #}
+    <p class="mt-2 text-sm text-gray-500">如果你认为这是权限问题，请联系系统管理员。</p>
+    <a href="/" class="mt-6 inline-block rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">返回首页</a>
+  </div>
+</div>
+{% endblock %}

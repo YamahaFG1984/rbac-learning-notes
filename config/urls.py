@@ -6,3 +6,7 @@ urlpatterns = [
     path("accounts/", include("apps.accounts.urls")),
     path("rbac/", include("apps.rbac.urls")),
 ]
+
+handler403 = "config.views.custom_403"
+handler404 = "config.views.custom_404"
+handler500 = "config.views.custom_500"

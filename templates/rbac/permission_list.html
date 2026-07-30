@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}权限点{% endblock %}
+{% block page_title %}权限点{% endblock %}
+
 {% block content %}
-<div class="mx-auto max-w-5xl p-6">
-  <h1 class="mb-4 text-xl font-semibold text-gray-900">权限点</h1>
-  <p class="mb-4 text-sm text-gray-500">
+<p class="mb-4 text-sm text-gray-500">
     权限点由代码声明（各 app 的 <code class="rounded bg-gray-100 px-1">permissions.py</code>），
     用 <code class="rounded bg-gray-100 px-1">python manage.py sync_permissions</code> 同步入库。本页只读。
   </p>
@@ -43,5 +43,4 @@
       </tbody>
     </table>
   </div>
-</div>
 {% endblock %}

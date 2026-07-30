@@ -1,14 +1,20 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}RBAC 教学系统{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
-</head>
-<body class="bg-gray-50 text-gray-900">
-  {# v0.1.0：最小占位。真正的后台布局在 v0.8.0 实现。 #}
-  {% block content %}{% endblock %}
-</body>
-</html>
+{% extends "base_anon.html" %}
+
+{# 后台外壳：侧边栏 + 顶栏 + 内容区。所有已登录页面都继承它。 #}
+
+{% block body %}
+<div class="flex min-h-screen">
+  {% include "_partials/_sidebar.html" %}
+  <div class="flex min-w-0 flex-1 flex-col">
+    {% include "_partials/_topbar.html" %}
+    <main class="flex-1 p-6">
+      <div class="mb-4 flex items-center justify-between">
+        <h1 class="text-xl font-semibold text-gray-900">{% block page_title %}{% endblock %}</h1>
+        <div class="flex gap-2">{% block page_actions %}{% endblock %}</div>
+      </div>
+      {% include "_partials/_messages.html" %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+{% endblock %}

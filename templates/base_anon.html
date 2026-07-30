@@ -1,0 +1,14 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}RBAC 教学系统{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+</head>
+<body class="bg-gray-50 text-gray-900">
+{% block body %}{% endblock %}
+{% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,11 @@
+{% if page.paginator.num_pages > 1 %}
+<div class="mt-4 flex items-center gap-3 text-sm">
+  {% if page.has_previous %}
+    <a href="?{{ qs }}page={{ page.previous_page_number }}" class="text-indigo-600 hover:underline">上一页</a>
+  {% else %}<span class="text-gray-300">上一页</span>{% endif %}
+  <span class="text-gray-500">第 {{ page.number }} / {{ page.paginator.num_pages }} 页，共 {{ page.paginator.count }} 条</span>
+  {% if page.has_next %}
+    <a href="?{{ qs }}page={{ page.next_page_number }}" class="text-indigo-600 hover:underline">下一页</a>
+  {% else %}<span class="text-gray-300">下一页</span>{% endif %}
+</div>
+{% endif %}

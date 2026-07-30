@@ -1,17 +1,13 @@
 {% extends "base.html" %}
 {% block title %}用户管理{% endblock %}
-{% block content %}
-<div class="mx-auto max-w-6xl p-6">
-  <div class="mb-4 flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-gray-900">用户管理</h1>
-    <a href="{% url 'accounts:user_create' %}"
-       class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建用户</a>
-  </div>
-  {% for message in messages %}
-    <div class="mb-3 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">{{ message }}</div>
-  {% endfor %}
+{% block page_title %}用户管理{% endblock %}
+{% block page_actions %}
+  <a href="{% url 'accounts:user_create' %}"
+     class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建用户</a>
+{% endblock %}
 
-  <form method="get" class="mb-4 flex gap-2">
+{% block content %}
+<form method="get" class="mb-4 flex gap-2">
     <input type="text" name="kw" value="{{ kw }}" placeholder="用户名 / 姓名 / 手机号"
            class="rounded-md border-0 px-2 py-1.5 text-sm ring-1 ring-inset ring-gray-300">
     <select name="dept" class="rounded-md border-0 px-2 py-1.5 text-sm ring-1 ring-inset ring-gray-300">
@@ -70,5 +66,4 @@
     {% if page.has_next %}<a href="?page={{ page.next_page_number }}&kw={{ kw }}" class="text-indigo-600">下一页</a>{% endif %}
   </div>
   {% endif %}
-</div>
 {% endblock %}

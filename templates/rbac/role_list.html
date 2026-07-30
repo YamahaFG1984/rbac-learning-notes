@@ -1,16 +1,13 @@
 {% extends "base.html" %}
 {% block title %}角色管理{% endblock %}
+{% block page_title %}角色管理{% endblock %}
+{% block page_actions %}
+  <a href="{% url 'rbac:role_create' %}"
+     class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建角色</a>
+{% endblock %}
+
 {% block content %}
-<div class="mx-auto max-w-5xl p-6">
-  <div class="mb-4 flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-gray-900">角色管理</h1>
-    <a href="{% url 'rbac:role_create' %}"
-       class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建角色</a>
-  </div>
-  {% for message in messages %}
-    <div class="mb-3 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">{{ message }}</div>
-  {% endfor %}
-  <div class="overflow-x-auto rounded-lg bg-white shadow">
+<div class="overflow-x-auto rounded-lg bg-white shadow">
     <table class="min-w-full divide-y divide-gray-200">
       <thead class="bg-gray-50">
         <tr>
@@ -49,5 +46,4 @@
       </tbody>
     </table>
   </div>
-</div>
 {% endblock %}

@@ -1,0 +1,13 @@
+<header class="flex h-14 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
+  <div class="text-sm text-gray-500">
+    {% if user.department %}{{ user.department.name }} · {% endif %}{{ user }}
+    {% if user.is_superuser %}<span class="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-700">超管</span>{% endif %}
+  </div>
+  <form method="post" action="{% url 'accounts:logout' %}">
+    {% csrf_token %}
+    <button type="submit"
+            class="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">
+      退出登录
+    </button>
+  </form>
+</header>
