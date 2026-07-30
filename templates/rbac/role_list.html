@@ -2,8 +2,10 @@
 {% block title %}角色管理{% endblock %}
 {% block page_title %}角色管理{% endblock %}
 {% block page_actions %}
+  {% if 'system:role:create' in perms %}
   <a href="{% url 'rbac:role_create' %}"
      class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建角色</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -32,12 +34,18 @@
             {% else %}<span class="text-gray-400">停用</span>{% endif %}
           </td>
           <td class="space-x-2 whitespace-nowrap px-4 py-2 text-sm">
+            {% if 'system:role:assign_perm' in perms %}
             <a href="{% url 'rbac:role_perm_assign' role.pk %}" class="text-indigo-600 hover:underline">分配权限</a>
+            {% endif %}
+            {% if 'system:role:update' in perms %}
             <a href="{% url 'rbac:role_update' role.pk %}" class="text-indigo-600 hover:underline">编辑</a>
+            {% endif %}
+            {% if 'system:role:delete' in perms %}
             <form method="post" action="{% url 'rbac:role_delete' role.pk %}" class="inline">
               {% csrf_token %}
               <button type="submit" class="text-red-600 hover:underline">删除</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% empty %}

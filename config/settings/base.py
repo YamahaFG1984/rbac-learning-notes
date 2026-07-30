@@ -60,6 +60,9 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                # 注入惰性的 perms 对象，模板里可写 {% if 'a:b:c' in perms %}
+                # ⚠️ 这是体验优化，不是安全边界（ADR-012）
+                "apps.rbac.context_processors.rbac",
             ],
         },
     },

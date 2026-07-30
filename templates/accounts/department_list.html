@@ -2,8 +2,10 @@
 {% block title %}部门管理{% endblock %}
 {% block page_title %}部门管理{% endblock %}
 {% block page_actions %}
+  {% if 'system:dept:create' in perms %}
   <a href="{% url 'accounts:department_create' %}"
      class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建部门</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -33,11 +35,15 @@
             {% else %}<span class="text-gray-400">停用</span>{% endif %}
           </td>
           <td class="space-x-2 whitespace-nowrap px-4 py-2 text-sm">
+            {% if 'system:dept:update' in perms %}
             <a href="{% url 'accounts:department_update' row.obj.pk %}" class="text-indigo-600 hover:underline">编辑</a>
+            {% endif %}
+            {% if 'system:dept:delete' in perms %}
             <form method="post" action="{% url 'accounts:department_delete' row.obj.pk %}" class="inline">
               {% csrf_token %}
               <button type="submit" class="text-red-600 hover:underline">删除</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% empty %}

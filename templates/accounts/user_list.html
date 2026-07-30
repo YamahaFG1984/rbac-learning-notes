@@ -2,8 +2,10 @@
 {% block title %}用户管理{% endblock %}
 {% block page_title %}用户管理{% endblock %}
 {% block page_actions %}
+  {% if 'system:user:create' in perms %}
   <a href="{% url 'accounts:user_create' %}"
      class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建用户</a>
+  {% endif %}
 {% endblock %}
 
 {% block content %}
@@ -45,11 +47,17 @@
             {% if u.is_active %}<span class="text-green-600">启用</span>{% else %}<span class="text-gray-400">禁用</span>{% endif %}
           </td>
           <td class="space-x-2 whitespace-nowrap px-4 py-2 text-sm">
+            {% if 'system:user:assign_role' in perms %}
             <a href="{% url 'accounts:user_role_assign' u.pk %}" class="text-indigo-600 hover:underline">分配角色</a>
+            {% endif %}
+            {% if 'system:user:update' in perms %}
             <a href="{% url 'accounts:user_update' u.pk %}" class="text-indigo-600 hover:underline">编辑</a>
+            {% endif %}
+            {% if 'system:user:delete' in perms %}
             <form method="post" action="{% url 'accounts:user_delete' u.pk %}" class="inline">
               {% csrf_token %}<button type="submit" class="text-red-600 hover:underline">删除</button>
             </form>
+            {% endif %}
           </td>
         </tr>
         {% empty %}
