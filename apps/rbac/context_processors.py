@@ -9,7 +9,9 @@
     成对出现，缺一不可。
 """
 
-from .services import get_user_perm_codes
+from django.utils.functional import SimpleLazyObject
+
+from .services import get_user_menu_tree, get_user_perm_codes
 
 
 class LazyPermSet:
@@ -51,4 +53,9 @@ class LazyPermSet:
 def rbac(request):
     # 不要在这里访问 request.user 的任何属性——那会触发 SimpleLazyObject 求值，
     # 把 user 从 session 里加载出来，惰性就白做了。
-    return {"perms": LazyPermSet(getattr(request, "user", None))}
+    user = getattr(request, "user", None)
+    return {
+        "perms": LazyPermSet(user),
+        # 同样惰性：未登录 / 不渲染侧边栏的页面不构建菜单树
+        "menu_tree": SimpleLazyObject(lambda: get_user_menu_tree(user)),
+    }

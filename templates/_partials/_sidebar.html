@@ -1,18 +1,22 @@
-{# ⚠️ v0.8.0：菜单硬编码。v0.11.0 会改为根据用户权限动态渲染。
-   保持结构简单，让那次改动的 diff 干净——tag 的切分要让 diff 讲故事。 #}
+{# v0.11.0：根据用户权限动态渲染。
+   对比 v0.8.0 的硬编码版本，这个 diff 里只有菜单逻辑——
+   因为布局在 v0.8.0 已经做完了。tag 的切分要让 diff 讲故事。 #}
 <aside class="w-56 shrink-0 bg-gray-900 text-gray-300">
   <div class="px-4 py-4 text-lg font-semibold text-white">RBAC 教学系统</div>
   <nav class="space-y-1 px-2 pb-6">
-    <div class="px-2 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-gray-500">组织管理</div>
-    <a href="{% url 'accounts:department_list' %}"
-       class="block rounded px-2 py-1.5 text-sm hover:bg-gray-800 {% if request.path == '/accounts/departments/' %}bg-gray-800 text-white{% endif %}">部门管理</a>
-    <a href="{% url 'accounts:user_list' %}"
-       class="block rounded px-2 py-1.5 text-sm hover:bg-gray-800 {% if request.path == '/accounts/users/' %}bg-gray-800 text-white{% endif %}">用户管理</a>
-
-    <div class="px-2 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-gray-500">权限管理</div>
-    <a href="{% url 'rbac:role_list' %}"
-       class="block rounded px-2 py-1.5 text-sm hover:bg-gray-800 {% if request.path == '/rbac/roles/' %}bg-gray-800 text-white{% endif %}">角色管理</a>
-    <a href="{% url 'rbac:permission_list' %}"
-       class="block rounded px-2 py-1.5 text-sm hover:bg-gray-800 {% if request.path == '/rbac/permissions/' %}bg-gray-800 text-white{% endif %}">权限点</a>
+    {% for item in menu_tree %}
+      {% if item.children %}
+        <div class="px-2 pt-3 pb-1 text-xs font-medium uppercase tracking-wide text-gray-500">{{ item.name }}</div>
+        {% for child in item.children %}
+          <a href="{{ child.url|default:'#' }}"
+             class="block rounded px-2 py-1.5 text-sm hover:bg-gray-800 {% if child.url == request.path %}bg-gray-800 text-white{% endif %}">{{ child.name }}</a>
+        {% endfor %}
+      {% elif item.url %}
+        <a href="{{ item.url }}"
+           class="block rounded px-2 py-1.5 text-sm hover:bg-gray-800 {% if item.url == request.path %}bg-gray-800 text-white{% endif %}">{{ item.name }}</a>
+      {% endif %}
+    {% empty %}
+      <p class="px-2 py-3 text-xs text-gray-500">你还没有被分配任何菜单权限</p>
+    {% endfor %}
   </nav>
 </aside>

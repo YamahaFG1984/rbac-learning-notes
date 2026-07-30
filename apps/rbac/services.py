@@ -14,7 +14,13 @@
 from typing import Iterable
 
 from django.db import transaction
+# django.urls.reverse 是「URL name -> 路径」的纯函数，不依赖 request/response，
+# 且 Web 层与 API 层都需要它。它在 ADR-013 的允许清单内——
+# 被禁的是 django.http / shortcuts / views / rest_framework 这些
+# 「响应怎么发」的东西，见 tests/rbac/test_services.py::TestKernelPurity。
+from django.urls import NoReverseMatch, reverse
 
+from .constants import PermType
 from .models import Permission, Role, RolePermission
 
 
@@ -158,3 +164,83 @@ def get_user_role_ids(user):
     from .models import UserRole
 
     return set(UserRole.objects.filter(user=user).values_list("role_id", flat=True))
+
+
+# --------------------------------------------------------------------------- #
+# 菜单树
+# --------------------------------------------------------------------------- #
+
+
+def get_user_menu_tree(user) -> list[dict]:
+    """构建当前用户可见的菜单树。
+
+    算法方向是**自底向上**：先标记有权限的 menu 节点，再沿 parent 链向上
+    保留全部祖先目录。
+
+    为什么不能自顶向下？因为 catalog 没有权限码，判断不了它自己。
+    目录的可见性 = 它是否有任何一个有权限的后代菜单。
+    自底向上的副作用正好是我们要的：空目录（无任何有权限的后代）
+    自然不会被保留——一个点开是空的目录，用户会以为系统坏了。
+
+    查询次数固定为 1（不含权限解析），与菜单层级无关（NFR-3）。
+
+    返回 list[dict] 而不是 model 实例：v1.2.0 的 /auth/profile 要把它
+    直接 JSON 序列化给前端。
+    """
+    codes = get_user_perm_codes(user)
+
+    nodes = list(
+        Permission.objects.filter(
+            perm_type__in=[PermType.CATALOG, PermType.MENU],
+            is_active=True,
+            is_visible=True,
+            is_deprecated=False,
+        )
+    )
+    by_id = {n.id: n for n in nodes}
+
+    # 第一步：标记有权限的 menu
+    keep = {
+        n.id for n in nodes if n.perm_type == PermType.MENU and n.code and n.code in codes
+    }
+
+    # 第二步：向上保留祖先目录
+    for node_id in list(keep):
+        parent_id = by_id[node_id].parent_id
+        while parent_id is not None and parent_id not in keep:
+            keep.add(parent_id)  # 碰到已保留的祖先就停——再往上都保留过了
+            parent_id = by_id[parent_id].parent_id if parent_id in by_id else None
+
+    def safe_reverse(url_name):
+        """url_name 是人手写在 permissions.py 里的字符串，可能写错，
+        也可能对应的 URL 后来被删了。不处理的话，一个写错的 url_name
+        会让整个侧边栏渲染崩溃——所有页面都打不开。"""
+        if not url_name:
+            return None
+        try:
+            return reverse(url_name)
+        except NoReverseMatch:
+            return None
+
+    children_of = {}
+    for node in nodes:
+        if node.id in keep:
+            children_of.setdefault(node.parent_id, []).append(node)
+    for siblings in children_of.values():
+        # 同级按 order_num 排——不能靠 ORDER BY path，那是字符串排序
+        siblings.sort(key=lambda n: (n.order_num, n.pk))
+
+    def assemble(parent_id):
+        return [
+            {
+                "id": n.id,
+                "name": n.name,
+                "icon": n.icon,
+                "url": safe_reverse(n.url_name),
+                "perm_type": n.perm_type,
+                "children": assemble(n.id),
+            }
+            for n in children_of.get(parent_id, [])
+        ]
+
+    return assemble(None)

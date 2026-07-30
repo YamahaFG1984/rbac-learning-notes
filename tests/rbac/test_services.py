@@ -198,7 +198,13 @@ class TestSaveUserRoles:
 
 @pytest.mark.django_db
 class TestKernelPurity:
+    # 被禁的是「响应怎么发」这类表现层决策——它们在 Web 和 API 之间是不同的。
     FORBIDDEN_PREFIXES = ("django.http", "django.shortcuts", "django.views", "rest_framework")
+
+    # 显式的允许清单。django.urls.reverse 是「URL name -> 路径」的纯函数，
+    # 不依赖 request/response，Web 层和 API 层都要用它。
+    # 把它写在这里而不是让它偷偷溜过去——边界应当是**声明**出来的，不是默认的。
+    ALLOWED_HTTP_ADJACENT = ("django.urls",)
 
     def test_services_imports_nothing_from_presentation_layer(self):
         """ADR-013：内核不认识 HTTP。这条约束的收益在 v1.2.0 兑现。
@@ -220,7 +226,10 @@ class TestKernelPurity:
                 imported.add(node.module)
 
         offenders = [
-            m for m in imported if m.startswith(self.FORBIDDEN_PREFIXES)
+            m
+            for m in imported
+            if m.startswith(self.FORBIDDEN_PREFIXES)
+            and not m.startswith(self.ALLOWED_HTTP_ADJACENT)
         ]
         assert not offenders, (
             f"权限内核不得依赖表现层：{offenders}。"

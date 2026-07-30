@@ -118,17 +118,18 @@ class TestRoleViews:
         self, admin_client_su, perms, django_assert_num_queries
     ):
         role = Role.objects.create(code="r", name="角色")
-        # 8 = 认证 2（session 读 + user 读，AuthenticationMiddleware）
+        # 9 = 认证 2（session 读 + user 读，AuthenticationMiddleware）
         #   + 业务 3（get_object_or_404(Role) + 已勾选 ID + 权限树全量）
+        #   + 侧边栏菜单 1（v0.11.0 起动态渲染，一次取全部菜单节点）
         #   + session 回写 3（SAVEPOINT / UPDATE django_session / RELEASE）
         #
         # 最后那 3 次是 SESSION_SAVE_EVERY_REQUEST=True 的代价——滑动过期
         # 意味着**每个请求**都写一次 session 存储（v0.7.0 记过这笔账，这里实测到了）。
         # 生产环境把 session 换成 Redis 就没有这 3 次数据库写。
         #
-        # 关键：业务那 3 次与树的深度和节点数无关。递归查库的实现会变成 O(节点数)。
-        # 超管走 ALL_PERMS 短路，鉴权本身不产生查询。
-        with django_assert_num_queries(8):
+        # 关键：业务那 3 次与树的深度和节点数无关，菜单那 1 次与层级无关。
+        # 递归查库的实现会变成 O(节点数)。超管走 ALL_PERMS 短路，鉴权本身不产生查询。
+        with django_assert_num_queries(9):
             resp = admin_client_su.get(f"/rbac/roles/{role.pk}/permissions/")
         assert resp.status_code == 200
 
