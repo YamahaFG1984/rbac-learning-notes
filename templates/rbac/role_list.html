@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}角色管理{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-5xl p-6">
+  <div class="mb-4 flex items-center justify-between">
+    <h1 class="text-xl font-semibold text-gray-900">角色管理</h1>
+    <a href="{% url 'rbac:role_create' %}"
+       class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建角色</a>
+  </div>
+  {% for message in messages %}
+    <div class="mb-3 rounded-md bg-blue-50 px-3 py-2 text-sm text-blue-800">{{ message }}</div>
+  {% endfor %}
+  <div class="overflow-x-auto rounded-lg bg-white shadow">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">角色名称</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">编码</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">数据范围</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">状态</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">操作</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for role in roles %}
+        <tr>
+          <td class="px-4 py-2 text-sm">
+            {{ role.name }}
+            {% if role.is_builtin %}<span class="ml-1 rounded bg-gray-100 px-1.5 py-0.5 text-xs text-gray-500">内置</span>{% endif %}
+          </td>
+          <td class="px-4 py-2 font-mono text-xs text-gray-500">{{ role.code }}</td>
+          <td class="px-4 py-2 text-sm text-gray-600">{{ role.get_data_scope_display }}</td>
+          <td class="px-4 py-2 text-sm">
+            {% if role.is_active %}<span class="text-green-600">启用</span>
+            {% else %}<span class="text-gray-400">停用</span>{% endif %}
+          </td>
+          <td class="space-x-2 whitespace-nowrap px-4 py-2 text-sm">
+            <a href="{% url 'rbac:role_perm_assign' role.pk %}" class="text-indigo-600 hover:underline">分配权限</a>
+            <a href="{% url 'rbac:role_update' role.pk %}" class="text-indigo-600 hover:underline">编辑</a>
+            <form method="post" action="{% url 'rbac:role_delete' role.pk %}" class="inline">
+              {% csrf_token %}
+              <button type="submit" class="text-red-600 hover:underline">删除</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-4 py-6 text-center text-sm text-gray-400">暂无角色</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,6 +1,23 @@
 from django.db import models
 
 
+class DataScope(models.IntegerChoices):
+    """角色的数据范围（ADR-007）。
+
+    ⚠️ 编号刻意**从大范围到小范围递增**——这让「哪个范围更宽」变成一次整数比较，
+       min(scopes) 就是最宽的那个。v0.14.0 用它做短路优化。
+
+    但注意：合并多角色的数据范围时**不能**简单「取最宽枚举」，
+    那样在 CUSTOM 参与时会丢数据。编号顺序只用于短路，不用于合并。
+    """
+
+    ALL = 1, "全部数据"
+    DEPT_AND_BELOW = 2, "本部门及以下"
+    DEPT_ONLY = 3, "仅本部门"
+    SELF_ONLY = 4, "仅本人"
+    CUSTOM = 5, "自定义部门"
+
+
 class PermType(models.TextChoices):
     """权限点的三种节点类型。菜单与权限点合并为一张表，详见 ADR-005。
 

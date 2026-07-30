@@ -1,8 +1,8 @@
 from django.db import models
 
-from apps.common.models import TreeModel
+from apps.common.models import TimestampedModel, TreeModel
 
-from .constants import PermType
+from .constants import DataScope, PermType
 
 
 class Permission(TreeModel):
@@ -49,3 +49,66 @@ class Permission(TreeModel):
 
     def __str__(self):
         return f"{self.name}({self.code})" if self.code else self.name
+
+
+class Role(TimestampedModel):
+    """角色：一组权限的命名集合。
+
+    v0.5.0 只做 RBAC0 的角色；继承（inherits_from）在 v0.12.0 加入，
+    刻意分开是为了让 RBAC0 -> RBAC1 的 diff 干净。
+    """
+
+    code = models.CharField("角色编码", max_length=64, unique=True)
+    name = models.CharField("角色名称", max_length=64)
+    description = models.TextField("描述", blank=True)
+    # 默认取最窄的 SELF_ONLY 而非 ALL：默认值必须指向「出错时后果最轻」的方向。
+    # 忘配数据范围 -> 看得太少（有人报障，会被修好）
+    #             -> 看得太多（没有任何人会报障）
+    # 安全问题的特征就是「出错时没有反馈信号」。
+    # ⚠️ 本字段 v0.14.0 才真正生效。
+    data_scope = models.SmallIntegerField(
+        "数据范围", choices=DataScope.choices, default=DataScope.SELF_ONLY
+    )
+    order_num = models.SmallIntegerField("排序", default=0)
+    is_builtin = models.BooleanField("内置角色", default=False, help_text="内置角色不可删除")
+    is_active = models.BooleanField("启用", default=True)
+
+    class Meta:
+        verbose_name = "角色"
+        verbose_name_plural = verbose_name
+        ordering = ["order_num", "id"]
+
+    def __str__(self):
+        return self.name
+
+    def delete(self, *args, **kwargs):
+        # 视图层也会拦一道，但 shell / 管理命令 / admin 都能绕过视图。
+        # 模型层这道用于兜住那些路径（对比 Department 用 on_delete=PROTECT
+        # ——那是更强的数据库级约束，可惜「内置」是业务语义，DB 表达不了）。
+        if self.is_builtin:
+            raise RuntimeError(f"内置角色「{self.name}」不可删除")
+        return super().delete(*args, **kwargs)
+
+
+class RolePermission(models.Model):
+    """角色-权限绑定。
+
+    只存**直接授予**的权限。继承来的权限在运行时计算（v0.12.0），不落库。
+
+    为什么不物化继承结果？物化让查询快一次，代价是父角色权限变更时要重算
+    所有后代角色的物化数据——一旦漏了或失败，就出现「数据库里的权限和规则
+    不一致」，而且这种不一致是**静默**的，没人会发现。
+    """
+
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="role_permissions")
+    permission = models.ForeignKey(
+        Permission, on_delete=models.CASCADE, related_name="role_permissions"
+    )
+
+    class Meta:
+        verbose_name = "角色权限"
+        verbose_name_plural = verbose_name
+        unique_together = [("role", "permission")]
+
+    def __str__(self):
+        return f"{self.role} -> {self.permission}"

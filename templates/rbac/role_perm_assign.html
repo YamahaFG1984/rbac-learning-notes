@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}分配权限：{{ role.name }}{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-3xl p-6">
+  <h1 class="mb-1 text-xl font-semibold text-gray-900">分配权限</h1>
+  <p class="mb-4 text-sm text-gray-500">角色：{{ role.name }}（{{ role.code }}）</p>
+
+  <form method="post" class="rounded-lg bg-white p-6 shadow">
+    {% csrf_token %}
+    <div class="mb-4 flex gap-2 text-sm">
+      <button type="button" data-toggle-all="1"
+              class="rounded-md bg-white px-2 py-1 text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">全选</button>
+      <button type="button" data-toggle-all="0"
+              class="rounded-md bg-white px-2 py-1 text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">全不选</button>
+    </div>
+
+    <ul class="space-y-1">
+      {% for row in rows %}
+      <li style="padding-left: {{ row.indent_px }}px">
+        <label class="inline-flex items-center gap-2 rounded px-1 py-0.5 text-sm hover:bg-gray-50">
+          <input type="checkbox" name="permissions" value="{{ row.obj.pk }}"
+                 data-id="{{ row.obj.pk }}" data-parent="{{ row.obj.parent_id|default:'' }}"
+                 {% if row.checked %}checked{% endif %}
+                 class="h-4 w-4 rounded border-gray-300 text-indigo-600">
+          <span>{{ row.obj.name }}</span>
+          {% if row.obj.code %}
+            <span class="font-mono text-xs text-gray-400">{{ row.obj.code }}</span>
+          {% else %}
+            <span class="text-xs text-gray-400">（目录）</span>
+          {% endif %}
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+
+    <div class="mt-6 flex gap-2">
+      <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">保存</button>
+      <a href="{% url 'rbac:role_list' %}" class="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">取消</a>
+    </div>
+  </form>
+</div>
+
+<script>
+// 权限树父子联动。原生 JS 即可，不需要任何前端框架。
+(function () {
+  const boxes = Array.from(document.querySelectorAll('input[name="permissions"]'));
+  const byId = new Map(boxes.map(b => [b.dataset.id, b]));
+  const childrenOf = new Map();
+  boxes.forEach(b => {
+    const p = b.dataset.parent;
+    if (p) {
+      if (!childrenOf.has(p)) childrenOf.set(p, []);
+      childrenOf.get(p).push(b);
+    }
+  });
+
+  function setDescendants(box, checked) {
+    (childrenOf.get(box.dataset.id) || []).forEach(child => {
+      child.checked = checked;
+      child.indeterminate = false;
+      setDescendants(child, checked);
+    });
+  }
+
+  function refreshAncestors(box) {
+    const parent = byId.get(box.dataset.parent);
+    if (!parent) return;
+    const siblings = childrenOf.get(parent.dataset.id) || [];
+    const checked = siblings.filter(s => s.checked).length;
+    const partial = siblings.some(s => s.indeterminate) || (checked > 0 && checked < siblings.length);
+    parent.checked = checked === siblings.length;
+    // indeterminate 只能用 JS 设置，没有对应的 HTML 属性；
+    // 且它只是视觉状态——提交时半选的父节点若 checked 为 false 就不会被提交。
+    parent.indeterminate = partial;
+    refreshAncestors(parent);
+  }
+
+  boxes.forEach(b => b.addEventListener('change', e => {
+    setDescendants(e.target, e.target.checked);
+    refreshAncestors(e.target);
+  }));
+
+  document.querySelectorAll('[data-toggle-all]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const on = btn.dataset.toggleAll === '1';
+      boxes.forEach(b => { b.checked = on; b.indeterminate = false; });
+    });
+  });
+
+  // 初始渲染时算一遍半选状态
+  boxes.filter(b => !childrenOf.has(b.dataset.id)).forEach(refreshAncestors);
+})();
+</script>
+{% endblock %}
