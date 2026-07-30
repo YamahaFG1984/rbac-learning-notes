@@ -13,6 +13,8 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from apps.rbac.decorators import public_view
+
 from .forms import INPUT_CLS
 from .models import User
 
@@ -87,6 +89,7 @@ def _safe_redirect_target(request):
     return settings.LOGIN_REDIRECT_URL
 
 
+@public_view(reason="登录页，未认证用户必须能访问")
 def login_view(request):
     if request.user.is_authenticated:
         return redirect(settings.LOGIN_REDIRECT_URL)
@@ -121,6 +124,7 @@ def login_view(request):
     )
 
 
+@public_view(reason="登出，任何已登录用户都应能主动退出，不该额外要求权限")
 @require_POST
 def logout_view(request):
     """Django 5.x 起 LogoutView 只接受 POST。

@@ -92,6 +92,14 @@ MESSAGE_STORAGE = "django.contrib.messages.storage.session.SessionStorage"
 # 认证与会话（v0.7.0）
 # --------------------------------------------------------------------------- #
 
+AUTHENTICATION_BACKENDS = [
+    # 故意只留我们的 backend，移除 ModelBackend：
+    # 两套权限体系并存只会造成混淆（ADR-001）。
+    # RBACBackend 继承自 ModelBackend，authenticate() 与 get_user()
+    # （含 is_active 检查）都保留了。
+    "apps.rbac.backends.RBACBackend",
+]
+
 LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "/accounts/departments/"
 LOGOUT_REDIRECT_URL = "accounts:login"

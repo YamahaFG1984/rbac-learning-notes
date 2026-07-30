@@ -1,3 +1,4 @@
+from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.paginator import Paginator
 from django.db.models import ProtectedError, Q
@@ -5,18 +6,24 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.common.views import build_tree_rows
+from apps.rbac.decorators import require_perm
 from apps.rbac.models import Role
 from apps.rbac.services import get_user_role_ids, save_user_roles
 
 from .forms import DepartmentForm, UserCreateForm, UserUpdateForm
 from .models import Department, User
+from .permissions import DeptPerm, UserPerm
 
 
+@login_required
+@require_perm(DeptPerm.VIEW)
 def department_list(request):
     rows = build_tree_rows(Department.objects.select_related("parent").all())
     return render(request, "accounts/department_list.html", {"rows": rows})
 
 
+@login_required
+@require_perm(DeptPerm.CREATE)
 def department_create(request):
     form = DepartmentForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -28,6 +35,8 @@ def department_create(request):
     )
 
 
+@login_required
+@require_perm(DeptPerm.UPDATE)
 def department_update(request, pk):
     dept = get_object_or_404(Department, pk=pk)
     form = DepartmentForm(request.POST or None, instance=dept)
@@ -42,7 +51,9 @@ def department_update(request, pk):
     )
 
 
+@login_required
 @require_POST
+@require_perm(DeptPerm.DELETE)
 def department_delete(request, pk):
     dept = get_object_or_404(Department, pk=pk)
     try:
@@ -60,6 +71,8 @@ def department_delete(request, pk):
 # --------------------------------------------------------------------------- #
 
 
+@login_required
+@require_perm(UserPerm.VIEW)
 def user_list(request):
     users = User.objects.select_related("department").all()
     if kw := request.GET.get("kw", "").strip():
@@ -80,6 +93,8 @@ def user_list(request):
     )
 
 
+@login_required
+@require_perm(UserPerm.CREATE)
 def user_create(request):
     form = UserCreateForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -89,6 +104,8 @@ def user_create(request):
     return render(request, "accounts/user_form.html", {"form": form, "title": "新建用户"})
 
 
+@login_required
+@require_perm(UserPerm.UPDATE)
 def user_update(request, pk):
     user = get_object_or_404(User, pk=pk)
     form = UserUpdateForm(request.POST or None, instance=user)
@@ -101,7 +118,9 @@ def user_update(request, pk):
     )
 
 
+@login_required
 @require_POST
+@require_perm(UserPerm.DELETE)
 def user_delete(request, pk):
     user = get_object_or_404(User, pk=pk)
     if user.is_superuser:
@@ -116,6 +135,8 @@ def user_delete(request, pk):
     return redirect("accounts:user_list")
 
 
+@login_required
+@require_perm(UserPerm.ASSIGN_ROLE)
 def user_role_assign(request, pk):
     """给用户分配角色。角色数量少，多选 checkbox 即可。"""
     user = get_object_or_404(User, pk=pk)
