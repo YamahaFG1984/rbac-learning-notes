@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* 告诉 Tailwind 去哪里扫描用到的 class。
+   漏掉 apps 目录的话，写在 Python 里的 class 名（表单 widget 的 attrs）不会被打包。 */
+@source "../../templates";
+@source "../../apps";

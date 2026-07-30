@@ -1,0 +1,14 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}RBAC 教学系统{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/tailwind.css' %}">
+</head>
+<body class="bg-gray-50 text-gray-900">
+  {# v0.1.0：最小占位。真正的后台布局在 v0.8.0 实现。 #}
+  {% block content %}{% endblock %}
+</body>
+</html>

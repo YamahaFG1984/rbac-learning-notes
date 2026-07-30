@@ -1,0 +1,4 @@
+# Tailwind 构建产物入库（ADR-015），但在 diff / 语言统计中视为生成文件。
+# 对比 tag 时可显式排除：
+#   git diff v0.7.0 v0.8.0 -- ':!static/css/tailwind.css'
+static/css/tailwind.css linguist-generated=true

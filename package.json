@@ -1,0 +1,15 @@
+{
+  "name": "rbac-learning-notes",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tailwind CSS 构建。产物 static/css/tailwind.css 提交进 Git（ADR-015），checkout 任意 tag 无需 npm install 即可看到正确样式。",
+  "scripts": {
+    "build:css": "tailwindcss -i ./static/src/input.css -o ./static/css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i ./static/src/input.css -o ./static/css/tailwind.css --watch",
+    "_note": "Tailwind v4 的 CLI 独立成了 @tailwindcss/cli 包；上面两条脚本经 npm 调用时会解析到它。"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.0.0",
+    "tailwindcss": "^4.0.0"
+  }
+}

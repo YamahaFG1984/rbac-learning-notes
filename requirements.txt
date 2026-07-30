@@ -1,0 +1,7 @@
+# 锁死小版本：教学项目的第一优先级是可复现
+Django==5.2.16
+
+# 测试
+pytest==9.1.1
+pytest-django==4.11.1
+pytest-cov==7.0.0
