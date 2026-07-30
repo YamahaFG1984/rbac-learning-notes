@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}权限点{% endblock %}
+{% block content %}
+<div class="mx-auto max-w-5xl p-6">
+  <h1 class="mb-4 text-xl font-semibold text-gray-900">权限点</h1>
+  <p class="mb-4 text-sm text-gray-500">
+    权限点由代码声明（各 app 的 <code class="rounded bg-gray-100 px-1">permissions.py</code>），
+    用 <code class="rounded bg-gray-100 px-1">python manage.py sync_permissions</code> 同步入库。本页只读。
+  </p>
+  <div class="overflow-x-auto rounded-lg bg-white shadow">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">名称</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">权限码</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">类型</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">URL name</th>
+          <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">状态</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-100">
+        {% for row in rows %}
+        <tr class="{% if row.obj.is_deprecated %}bg-gray-50 text-gray-400{% endif %}">
+          <td class="px-4 py-2 text-sm">
+            <span style="padding-left: {{ row.indent_px }}px">
+              {% if not row.is_root %}<span class="text-gray-400">└ </span>{% endif %}{{ row.obj.name }}
+            </span>
+          </td>
+          <td class="px-4 py-2 font-mono text-xs text-gray-600">{{ row.obj.code|default:"—" }}</td>
+          <td class="px-4 py-2 text-sm text-gray-500">{{ row.obj.get_perm_type_display }}</td>
+          <td class="px-4 py-2 font-mono text-xs text-gray-400">{{ row.obj.url_name|default:"—" }}</td>
+          <td class="px-4 py-2 text-sm">
+            {% if row.obj.is_deprecated %}<span class="text-orange-500">已废弃</span>
+            {% elif row.obj.is_active %}<span class="text-green-600">启用</span>
+            {% else %}<span class="text-gray-400">停用</span>{% endif %}
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-4 py-6 text-center text-sm text-gray-400">
+          暂无权限点，请先运行 sync_permissions
+        </td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
