@@ -68,4 +68,35 @@ git diff v0.5.0 v0.6.0 -- ':!static/css/tailwind.css'
 
 ## 快速开始
 
-见 [`docs/03-实施计划.md`](docs/03-实施计划.md) 的「环境准备」章节。
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py seed_demo          # 生成演示数据
+python manage.py runserver
+```
+
+打开 http://127.0.0.1:8000/accounts/login/ ，统一密码 `demo1234`：
+
+| 账号 | 说明 | 侧边栏 | 可见工单 | 能删工单 | 访问技术部工单 |
+| --- | --- | --- | --- | --- | --- |
+| `superadmin` | 超管，绕过一切 | 全部 | 80 | ✅ | 可见 |
+| `sysadmin` | 系统管理员，`data_scope=ALL` | 系统管理 | 80 | ❌ | 可见 |
+| `cs_manager` | 客服主管，继承客服专员，本部门及以下 | 工单管理 | 50 | ✅ | **404** |
+| `cs_staff` | 客服专员，仅本人 | 工单管理 | 5 | ❌ | **404** |
+| `no_role` | 无角色 | **空** | **0** | ❌ | 404 |
+
+> 用 `cs_staff` 登录后，把工单详情 URL 里的 ID 换成技术部工单的 ID——
+> 会得到 **404 而不是 403**。这不是找不到，是「对你而言它不存在」
+> （见 [ADR-009](docs/02-设计文档.md)）。
+
+### 常用命令
+
+```bash
+pytest                                              # 310 个测试，约 10 秒
+pytest tests/security/ -v                           # 只跑越权测试
+pytest --cov --cov-report=term                      # 覆盖率
+python manage.py check                              # 含 rbac.W001 权限声明自检
+python manage.py sync_permissions --check-templates  # 检查模板里的权限码 typo
+bash scripts/smoke_all_tags.sh                      # 遍历所有 tag 冒烟测试
+```

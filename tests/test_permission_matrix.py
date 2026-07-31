@@ -23,7 +23,7 @@ import pytest
 from django.urls import reverse
 
 from apps.tickets.models import Ticket
-from tests.factories import DEMO_PASSWORD, build_demo_world
+from apps.common.demo import DEMO_PASSWORD, build_demo_world
 
 ALL_USERS = ["superadmin", "sysadmin", "cs_manager", "cs_staff", "no_role", "anonymous"]
 

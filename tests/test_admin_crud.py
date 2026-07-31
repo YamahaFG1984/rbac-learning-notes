@@ -10,7 +10,7 @@ from django.urls import reverse
 from apps.accounts.models import Department
 from apps.rbac.constants import DataScope
 from apps.rbac.models import Permission, Role, RoleDepartment, RolePermission, UserRole
-from tests.factories import DEMO_PASSWORD, build_demo_world
+from apps.common.demo import DEMO_PASSWORD, build_demo_world
 
 
 @pytest.fixture

@@ -18,6 +18,12 @@ from apps.rbac.models import Permission
 
 CODE_RE = re.compile(PERM_CODE_PATTERN)
 
+# 只匹配三段式格式的字符串字面量。太宽会误报（CSS 里的 background:url:xxx），
+# 太窄会漏报。
+TEMPLATE_CODE_RE = re.compile(
+    r"""['"]([a-z][a-z0-9_]*:[a-z][a-z0-9_]*:[a-z][a-z0-9_]*)['"]\s+in\s+perms"""
+)
+
 
 def collect_permissions():
     """发现所有 apps.* 下的 permissions.py 并收集其 PERMISSIONS 声明。"""
@@ -38,6 +44,11 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="只报告，不写库")
+        parser.add_argument(
+            "--check-templates",
+            action="store_true",
+            help="扫描模板中的权限码字面量，报告数据库里不存在的",
+        )
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -71,10 +82,51 @@ class Command(BaseCommand):
 
             bump_version()
 
+        if options["check_templates"]:
+            problems = self._check_templates()
+            if problems and not self.dry_run:
+                raise SystemExit(1)
+
         if self.dry_run:
             transaction.set_rollback(True)
 
     # ------------------------------------------------------------------ #
+
+    def _check_templates(self):
+        """扫描模板里的权限码字面量，报告数据库里不存在的。
+
+        解决 v0.10.0 留下的问题：模板里写错权限码不会报错，
+        只会**静默地不渲染那个按钮**。管理员配好了权限，用户却看不到按钮，
+        排查时你会怀疑缓存、怀疑角色配置、怀疑数据库——就是想不到
+        是模板里少打了一个字母。
+
+        ⚠️ 它只能发现「模板里有但库里没有」的。发现不了「库里有但
+           写错成了另一个存在的码」——部分解决好过不解决。
+        """
+        from pathlib import Path
+
+        from django.conf import settings
+
+        known = set(
+            Permission.objects.exclude(code__isnull=True).values_list("code", flat=True)
+        )
+        problems = []
+        for path in sorted(Path(settings.BASE_DIR, "templates").rglob("*.html")):
+            text = path.read_text(encoding="utf-8")
+            for match in TEMPLATE_CODE_RE.finditer(text):
+                code = match.group(1)
+                if code not in known:
+                    line = text[: match.start()].count("\n") + 1
+                    rel = path.relative_to(settings.BASE_DIR)
+                    problems.append(f"{rel}:{line}  {code}")
+
+        if problems:
+            self.stdout.write(self.style.ERROR(f"发现 {len(problems)} 个未知权限码："))
+            for p in problems:
+                self.stdout.write(f"  {p}")
+        else:
+            self.stdout.write(self.style.SUCCESS("模板中的权限码全部有效"))
+        return problems
 
     def _validate(self, nodes, _path="根"):
         """让机器守规范：格式不对直接报错，不要等到某天鉴权失败再 grep 半天。"""
