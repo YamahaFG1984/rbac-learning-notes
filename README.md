@@ -18,7 +18,7 @@
 | Django | 5.2.16（LTS） |
 | Python | 3.12 |
 | RBAC 层级 | NIST RBAC1（核心 RBAC + 角色继承）+ 数据行级权限 |
-| 交付形态 | 阶段一：Django 模板 + Tailwind CSS（前后端不分离）<br>阶段二：DRF + JWT（前后端分离），复用同一权限内核 |
+| 交付形态 | 阶段一：Django 模板 + Tailwind CSS（前后端不分离）<br>阶段二：DRF + JWT（前后端分离），复用同一权限内核<br>阶段三：React SPA（`feat/react-frontend` 分支），同一内核的第三种表现层 |
 | 多租户 | 不支持（单组织，部门树用于数据权限范围，不做租户隔离） |
 | 数据库 | SQLite（开发/教学）→ PostgreSQL（可选切换） |
 
@@ -33,6 +33,7 @@
 | [`docs/tags/`](docs/tags/) | **22 份可独立实现的 tag 规格书**，每份含思考题、接口契约、陷阱预警、渐进提示、自测清单、对比检查点 |
 | [`docs/04-横向对比.md`](docs/04-横向对比.md) | 与 Django 原生 / django-guardian / Casbin / 若依 的对照分析、选型决策树 |
 | [`CLAUDE.md`](CLAUDE.md) | 工程约定：命名规范、依赖方向、安全红线、每个 tag 的完成定义 |
+| [`docs/frontend/`](docs/frontend/) | **阶段三（`feat/react-frontend` 分支）**：React 前端的 PRD、15 条 F-ADR、17 份 tag 规格书 |
 
 > `04-横向对比.md` 建议在完成到 `v0.14.0`（数据权限）之后再读——
 > 没亲手实现过就去读别人的方案，只能记住结论，记不住原因。
