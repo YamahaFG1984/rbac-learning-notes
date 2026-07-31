@@ -156,44 +156,12 @@ class TestCoexistence:
 
 
 # --------------------------------------------------------------------------- #
-# ⚠️ v1.1.0 刻意留下的漏洞
+# v1.1.0 刻意留下的漏洞，已在 v1.2.0 补上
+#
+# 那三条断言（no_role 能删任意工单 / 所有人都看到 80 张 / 任何人都能列出
+# 用户和角色）现在全部翻转，见 tests/api/test_api_permissions.py 的
+# TestHolesFromV110AreClosed。
+#
+# 想看漏洞长什么样：
+#     git show v1.1.0:tests/api/test_auth.py | tail -40
 # --------------------------------------------------------------------------- #
-
-
-@pytest.mark.django_db
-class TestNoAuthorizationYet:
-    """Web 层花了 11 个 tag 建立的权限体系，在 API 层一个都没生效。
-
-    这正是很多真实项目的失败模式：为了对接前端/小程序/开放平台加了一套 API，
-    而 API 走的是另一条代码路径。
-
-    v1.2.0 会把这些断言全部翻转。
-    """
-
-    def test_no_role_user_can_delete_any_ticket(self, api, world):
-        """一个没有任何权限的用户，删掉了一张不属于他的工单。"""
-        token = get_token(api, "no_role").json()["access"]
-        api.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
-
-        victim = Ticket.objects.filter(department=world["tech"]).first()
-        resp = api.delete(f"/api/v1/tickets/{victim.pk}/")
-
-        assert resp.status_code == 204  # ← v1.2.0 会变成 403
-        assert not Ticket.objects.filter(pk=victim.pk).exists()
-
-    def test_everyone_sees_all_80_tickets(self, api, world):
-        for username in ("cs_staff", "cs_manager", "no_role"):
-            fresh = type(api)()
-            token = get_token(fresh, username).json()["access"]
-            fresh.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
-
-            count = fresh.get("/api/v1/tickets/").json()["count"]
-
-            assert count == 80, f"{username} 看到 {count} 张"  # ← v1.2.0 会变成 5/50/0
-
-    def test_anyone_can_list_users_and_roles(self, api, world):
-        token = get_token(api, "no_role").json()["access"]
-        api.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
-
-        assert api.get("/api/v1/users/").status_code == 200  # ← v1.2.0 变 403
-        assert api.get("/api/v1/roles/").status_code == 200  # ← v1.2.0 变 403

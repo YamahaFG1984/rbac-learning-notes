@@ -90,3 +90,68 @@ def check_view_permissions(app_configs, **kwargs):
             )
         )
     return problems
+
+
+@register()
+def check_viewset_perm_maps(app_configs, **kwargs):
+    """rbac.W002：ViewSet 的 perm_map 未覆盖它的全部 action。
+
+    这是 rbac.W001 在 API 层的对应物。
+
+    HasPerm 对漏配的 action 返回 403（默认拒绝），所以漏配不会造成
+    安全漏洞——但会造成「接口莫名 403」的运维问题。启动时报出来，
+    比等前端提工单强。
+
+    ⚠️ 自定义 @action 是漏配的重灾区：它们不在标准 CRUD 列表里。
+    """
+    from django.urls import get_resolver
+
+    problems = []
+    seen = set()
+
+    for _route, view in _iter_views():
+        cls = getattr(view, "view_class", None) or getattr(view, "cls", None)
+        if cls is None or not hasattr(cls, "get_extra_actions"):
+            continue  # 不是 DRF ViewSet
+        if cls in seen:
+            continue
+        seen.add(cls)
+
+        perm_map = getattr(cls, "perm_map", None)
+        if perm_map is None:
+            problems.append(
+                Warning(
+                    f"ViewSet {cls.__name__} 未声明 perm_map。",
+                    hint=(
+                        "声明 perm_map = {action: 权限码}；"
+                        "确实不需要权限管控的话，显式写 perm_map = {} 并注明理由。"
+                    ),
+                    id="rbac.W002",
+                )
+            )
+            continue
+
+        declared = set(perm_map)
+        actual = set()
+        for method_map in getattr(cls, "_actions_map", {}).values():
+            actual.add(method_map)
+        # 标准 CRUD action
+        for name in ("list", "retrieve", "create", "update", "partial_update", "destroy"):
+            if hasattr(cls, name):
+                actual.add(name)
+        # 自定义 @action
+        for extra in cls.get_extra_actions():
+            actual.add(extra.__name__)
+
+        missing = actual - declared
+        if missing:
+            problems.append(
+                Warning(
+                    f"ViewSet {cls.__name__} 的 perm_map 未覆盖：{sorted(missing)}。",
+                    hint="HasPerm 会对未覆盖的 action 返回 403（默认拒绝），"
+                    "接口将无法使用。",
+                    id="rbac.W002",
+                )
+            )
+
+    return problems

@@ -140,10 +140,11 @@ REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
-    # ⚠️ v1.1.0：只有认证，没有授权。任何登录用户都能调所有接口。
-    #    这是刻意留下的中间态，v1.2.0 换成 HasPerm。
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
+        # v1.2.0：接上统一的权限内核。HasPerm 本身不含任何判断逻辑，
+        # 它只是把 DRF 的调用约定翻译成对 services.user_has_perm() 的调用。
+        "apps.rbac.api.permissions.HasPerm",
     ],
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,

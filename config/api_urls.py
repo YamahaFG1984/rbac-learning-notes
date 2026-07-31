@@ -9,7 +9,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from apps.accounts.api.views import DepartmentViewSet, UserViewSet
-from apps.rbac.api.views import PermissionViewSet, RoleViewSet
+from apps.rbac.api.views import PermissionViewSet, RoleViewSet, profile
 from apps.tickets.api.views import TicketViewSet
 
 router = DefaultRouter()
@@ -24,5 +24,6 @@ app_name = "api"
 urlpatterns = [
     path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
+    path("auth/profile/", profile, name="profile"),
     *router.urls,
 ]
