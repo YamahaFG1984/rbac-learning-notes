@@ -21,7 +21,9 @@ DJANGO_APPS = [
     "django.contrib.staticfiles",
 ]
 
-THIRD_PARTY_APPS = []
+THIRD_PARTY_APPS = [
+    "rest_framework",
+]
 
 # 顺序按依赖方向排列：tickets/audit -> rbac -> accounts -> common
 LOCAL_APPS = [
@@ -123,3 +125,35 @@ RBAC_VERSION_KEY = "rbac:version"
 # 登录失败锁定（FR-5.3）
 LOGIN_FAIL_MAX_ATTEMPTS = 5
 LOGIN_FAIL_LOCKOUT_SECONDS = 900  # 15 分钟
+
+
+# --------------------------------------------------------------------------- #
+# API（v1.1.0）
+#
+# API 与 Web 模板**并存**，不是替换。同一套业务逻辑、同一套权限内核，
+# 服务两种完全不同的表现层——这是验证 ADR-013 解耦是否成功的唯一方法。
+# --------------------------------------------------------------------------- #
+
+from datetime import timedelta  # noqa: E402
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ],
+    # ⚠️ v1.1.0：只有认证，没有授权。任何登录用户都能调所有接口。
+    #    这是刻意留下的中间态，v1.2.0 换成 HasPerm。
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "PAGE_SIZE": 20,
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+}
+
+SIMPLE_JWT = {
+    # 缩短 access 有效期是 JWT「签发出去无法撤销」的主要缓解手段——
+    # 风险窗口 = 有效期
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+}

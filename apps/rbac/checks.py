@@ -12,7 +12,15 @@ from django.core.checks import Warning, register
 from django.urls import URLPattern, URLResolver, get_resolver
 
 # 这些前缀不归我们的权限体系管
-IGNORED_PREFIXES = ("admin/", "static/", "media/", "__debug__/")
+IGNORED_PREFIXES = (
+    "admin/",
+    "static/",
+    "media/",
+    "__debug__/",
+    # API 路由走 DRF 的 permission_classes 而不是我们的装饰器，
+    # 由 rbac.W002 单独检查（v1.2.0）。
+    "api/",
+)
 
 
 def _iter_views(resolver=None, prefix=""):

@@ -1,6 +1,10 @@
 # 锁死小版本：教学项目的第一优先级是可复现
 Django==5.2.16
 
+# 阶段二：API（v1.1.0 起）
+djangorestframework==3.16.1
+djangorestframework-simplejwt==5.5.1
+
 # 测试
 pytest==9.1.1
 pytest-django==4.11.1
