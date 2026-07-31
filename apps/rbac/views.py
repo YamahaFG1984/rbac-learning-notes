@@ -87,7 +87,7 @@ def role_perm_assign(request, pk):
 
     if request.method == "POST":
         ids = request.POST.getlist("permissions")
-        saved = save_role_permissions(role, ids)
+        saved = save_role_permissions(role, ids, actor=request.user)
         messages.success(request, f"已保存 {len(saved)} 项权限")
         return redirect("rbac:role_list")
 

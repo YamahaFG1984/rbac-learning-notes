@@ -12,6 +12,7 @@ shell、管理命令、admin、测试，任何路径改了数据都会触发。
  隐式机制用于「保证副作用发生」是好的，用于「决定业务语义」是危险的。）
 """
 
+import django.dispatch
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
@@ -31,3 +32,19 @@ from .models import Permission, Role, RoleDepartment, RolePermission, UserRole
 @receiver(post_delete, sender=Permission)
 def invalidate_rbac_cache(sender, **kwargs):
     bump_version()
+
+
+# --------------------------------------------------------------------------- #
+# 反转依赖：rbac 不能 import audit（CLAUDE.md 的依赖方向是 audit -> rbac）。
+#
+# rbac 定义并发送这个信号，audit 订阅它。这样「记录被拒绝的访问」这件事
+# 就不需要 rbac 知道 audit 的存在。
+#
+# 信号在这里的作用是**反转依赖方向**——这是它的另一个恰当用法
+# （前一个是「保证副作用一定发生」，见本文件顶部的缓存失效）。
+# --------------------------------------------------------------------------- #
+
+permission_denied = django.dispatch.Signal()
+
+role_permissions_changed = django.dispatch.Signal()
+user_roles_changed = django.dispatch.Signal()

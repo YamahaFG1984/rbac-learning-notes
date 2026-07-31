@@ -24,6 +24,7 @@ from django.db.models import Q
 from django.urls import NoReverseMatch, reverse
 
 from .cache import TTL, bump_version, get_version, perms_key, role_depts_key, roles_key
+from .signals import role_permissions_changed, user_roles_changed
 from .constants import DataScope, PermType
 from .models import Permission, Role, RolePermission
 
@@ -242,13 +243,29 @@ def user_has_all_perms(user, codes: Iterable[str]) -> bool:
 # --------------------------------------------------------------------------- #
 
 
+def _role_direct_codes(role) -> set[str]:
+    return set(
+        Permission.objects.filter(role_permissions__role=role)
+        .exclude(code__isnull=True)
+        .values_list("code", flat=True)
+    )
+
+
 @transaction.atomic
-def save_role_permissions(role, permission_ids):
+def save_role_permissions(role, permission_ids, actor=None):
     """全量覆盖式保存角色的直接权限。
 
     必须在事务里：不加事务的话，删完之后 bulk_create 抛异常，
     这个角色的权限就全没了，而且没人会立刻发现。
+
+    ⚠️ v0.17.0 新增：删除**之前**先读一次旧集合，用于审计日志的前后快照。
+
+       回顾 v0.5.0 陷阱 2 —— 当时我说「先删后插现在够用，但心里有数
+       这是一处已知会被改的地方」。现在就是那个时候，而改动成本只是
+       多读一次旧集合。**这就是「什么时候该提前设计、什么时候该等」
+       的实际答案：等到现在再改，成本很小，所以当初等是对的。**
     """
+    old_codes = _role_direct_codes(role)
     # ⚠️ 永远不要信任客户端提交的主键——直接用前端传来的 ID 建关联，
     #    等于允许构造请求把任意 ID（含已废弃的权限点）塞进来。
     valid_ids = set(
@@ -264,6 +281,17 @@ def save_role_permissions(role, permission_ids):
     #    （queryset.delete() 会触发 post_delete，但 bulk_create/bulk_update 不会。）
     #    这里必须显式 bump 一次，否则改完权限缓存不失效。
     bump_version()
+
+    new_codes = _role_direct_codes(role)
+    role_permissions_changed.send(
+        sender=None,
+        role=role,
+        actor=actor,
+        before=sorted(old_codes),
+        after=sorted(new_codes),
+        added=sorted(new_codes - old_codes),
+        removed=sorted(old_codes - new_codes),
+    )
     return valid_ids
 
 
@@ -279,6 +307,8 @@ def save_user_roles(user, role_ids, granted_by=None):
     """全量覆盖式保存用户的角色。"""
     from .models import UserRole
 
+    old_ids = set(UserRole.objects.filter(user=user).values_list("role_id", flat=True))
+
     valid_ids = set(
         Role.objects.filter(id__in=role_ids, is_active=True).values_list("id", flat=True)
     )
@@ -289,10 +319,15 @@ def save_user_roles(user, role_ids, granted_by=None):
             for rid in sorted(valid_ids)
         ]
     )
-    # ⚠️ bulk_create **不触发** post_save 信号——光挂 signals.py 是不够的。
-    #    （queryset.delete() 会触发 post_delete，但 bulk_create/bulk_update 不会。）
-    #    这里必须显式 bump 一次，否则改完权限缓存不失效。
+    # ⚠️ bulk_create **不触发** post_save 信号。
     bump_version()
+    user_roles_changed.send(
+        sender=None,
+        user=user,
+        actor=granted_by,
+        before=sorted(old_ids),
+        after=sorted(valid_ids),
+    )
     return valid_ids
 
 

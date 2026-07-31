@@ -13,6 +13,8 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
+from apps.audit.constants import AuditAction, AuditResult
+from apps.audit.services import log as audit_log
 from apps.rbac.decorators import public_view
 
 from .forms import INPUT_CLS
@@ -106,7 +108,14 @@ def login_view(request):
                 request, username=username, password=form.cleaned_data["password"]
             )
             if user is None:
-                record_login_failure(username)
+                attempts = record_login_failure(username)
+                audit_log(
+                    AuditAction.LOGIN_FAILED,
+                    detail={"username": username, "attempts": attempts},
+                    ip=get_client_ip(request),
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
+                    result=AuditResult.FAILURE,
+                )
                 form.add_error(None, LOGIN_FAILED_MESSAGE)
             else:
                 clear_login_failure(username)
@@ -114,6 +123,12 @@ def login_view(request):
                 login(request, user)
                 User.objects.filter(pk=user.pk).update(
                     last_login_ip=get_client_ip(request)
+                )
+                audit_log(
+                    AuditAction.LOGIN,
+                    actor=user,
+                    ip=get_client_ip(request),
+                    user_agent=request.META.get("HTTP_USER_AGENT", ""),
                 )
                 return redirect(_safe_redirect_target(request))
 
@@ -132,5 +147,11 @@ def logout_view(request):
     GET /logout/ 意味着攻击者可以在论坛发一张
     <img src="https://yoursite/logout/">，任何浏览到该页面的用户都会被强制登出。
     """
+    audit_log(
+        AuditAction.LOGOUT,
+        actor=request.user,
+        ip=get_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+    )
     logout(request)
     return redirect(reverse(settings.LOGOUT_REDIRECT_URL))

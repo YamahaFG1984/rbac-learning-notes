@@ -10,6 +10,27 @@ from functools import wraps
 from django.core.exceptions import PermissionDenied
 
 from .services import user_has_any_perm, user_has_perm
+from .signals import permission_denied
+
+
+def _client_ip(request):
+    xff = request.META.get("HTTP_X_FORWARDED_FOR")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.META.get("REMOTE_ADDR")
+
+
+def _notify_denied(request, code):
+    """发信号，让 audit（或任何订阅者）去记录。rbac 不认识 audit。"""
+    permission_denied.send(
+        sender=None,
+        user=request.user,
+        path=request.path,
+        method=request.method,
+        required_perm=code,
+        ip=_client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+    )
 
 
 def require_perm(code: str):
@@ -23,6 +44,7 @@ def require_perm(code: str):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
             if not user_has_perm(request.user, code):
+                _notify_denied(request, code)
                 raise PermissionDenied
             return view_func(request, *args, **kwargs)
 
@@ -39,6 +61,7 @@ def require_any_perm(*codes: str):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
             if not user_has_any_perm(request.user, codes):
+                _notify_denied(request, " | ".join(codes))
                 raise PermissionDenied
             return view_func(request, *args, **kwargs)
 

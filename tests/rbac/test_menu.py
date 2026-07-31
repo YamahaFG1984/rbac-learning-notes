@@ -57,10 +57,11 @@ class TestMenuTree:
     def test_superuser_sees_everything(self, django_user_model, perms):
         su = django_user_model.objects.create_superuser(username="su", password="x")
         tree = get_user_menu_tree(su)
-        # 目录按 order_num 排：工单管理(5) < 组织管理(10) < 权限管理(20)
-        assert names(tree) == ["工单管理", "组织管理", "权限管理"]
+        # 目录按 order_num 排：工单(5) < 组织(10) < 权限(20) < 系统监控(30)
+        assert names(tree) == ["工单管理", "组织管理", "权限管理", "系统监控"]
         assert names(tree[1]["children"]) == ["部门管理", "用户管理"]
         assert names(tree[2]["children"]) == ["角色管理", "权限点"]
+        assert names(tree[3]["children"]) == ["审计日志"]
 
     def test_buttons_never_appear(self, django_user_model, perms):
         su = django_user_model.objects.create_superuser(username="su", password="x")
