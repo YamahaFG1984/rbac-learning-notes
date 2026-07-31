@@ -4,6 +4,7 @@ from django.db import models
 
 from apps.common.models import TimestampedModel, TreeModel
 
+from .cache import RbacQuerySet
 from .constants import DataScope, PermType
 
 
@@ -44,6 +45,8 @@ class Permission(TreeModel):
     # 代码中已移除但保留记录：物理删除会连带删掉 RolePermission 的历史授权，
     # 而历史授权的可解释性是有价值的（FR-2.6）
     is_deprecated = models.BooleanField("已废弃", default=False)
+
+    objects = RbacQuerySet.as_manager()
 
     class Meta(TreeModel.Meta):
         verbose_name = "权限点"
@@ -88,6 +91,8 @@ class Role(TimestampedModel):
     order_num = models.SmallIntegerField("排序", default=0)
     is_builtin = models.BooleanField("内置角色", default=False, help_text="内置角色不可删除")
     is_active = models.BooleanField("启用", default=True)
+
+    objects = RbacQuerySet.as_manager()
 
     class Meta:
         verbose_name = "角色"
@@ -151,6 +156,8 @@ class RolePermission(models.Model):
         Permission, on_delete=models.CASCADE, related_name="role_permissions"
     )
 
+    objects = RbacQuerySet.as_manager()
+
     class Meta:
         verbose_name = "角色权限"
         verbose_name_plural = verbose_name
@@ -184,6 +191,8 @@ class UserRole(models.Model):
     )
     granted_at = models.DateTimeField("授权时间", auto_now_add=True)
 
+    objects = RbacQuerySet.as_manager()
+
     class Meta:
         verbose_name = "用户角色"
         verbose_name_plural = verbose_name
@@ -204,6 +213,8 @@ class RoleDepartment(models.Model):
     department = models.ForeignKey(
         "accounts.Department", on_delete=models.CASCADE, related_name="role_departments"
     )
+
+    objects = RbacQuerySet.as_manager()
 
     class Meta:
         verbose_name = "角色数据范围部门"

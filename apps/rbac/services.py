@@ -14,6 +14,7 @@
 from typing import Iterable
 
 from django.conf import settings
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Q
 # django.urls.reverse 是「URL name -> 路径」的纯函数，不依赖 request/response，
@@ -22,6 +23,7 @@ from django.db.models import Q
 # 「响应怎么发」的东西，见 tests/rbac/test_services.py::TestKernelPurity。
 from django.urls import NoReverseMatch, reverse
 
+from .cache import TTL, bump_version, get_version, perms_key, role_depts_key, roles_key
 from .constants import DataScope, PermType
 from .models import Permission, Role, RolePermission
 
@@ -62,6 +64,19 @@ ALL_PERMS = _AllPerms()
 # --------------------------------------------------------------------------- #
 
 
+def _get_role_map() -> dict[int, Role]:
+    """全部激活角色的 {id: Role} 映射。
+
+    角色数量很少（几十个），一次性加载后 expand_roles 变成纯内存操作，
+    向上遍历继承链不再产生查询。
+    """
+    data = cache.get(roles_key())
+    if data is None:
+        data = {r.id: r for r in Role.objects.filter(is_active=True)}
+        cache.set(roles_key(), data, TTL)
+    return data
+
+
 def expand_roles(roles: Iterable[Role]) -> set[Role]:
     """把直接角色集合展开为「直接角色 + 全部祖先角色」。
 
@@ -74,19 +89,25 @@ def expand_roles(roles: Iterable[Role]) -> set[Role]:
         已存在的环导致死循环，两道独立的防线。
       · 去重剪枝 —— 多个角色共享同一祖先时，祖先只展开一次。
     """
+    role_map = _get_role_map()
     result: set[Role] = set()
+    seen_ids: set[int] = set()
     for role in roles:
-        if role in result or not role.is_active:
+        if role.pk in seen_ids or not role.is_active:
             continue
         result.add(role)
-        current = role.inherits_from
+        seen_ids.add(role.pk)
+        current_id = role.inherits_from_id
         depth = 0
-        while current is not None and depth < settings.RBAC_MAX_ROLE_DEPTH:
-            if current in result:
+        while current_id is not None and depth < settings.RBAC_MAX_ROLE_DEPTH:
+            if current_id in seen_ids:
                 break  # 剪枝：这条链上面都展开过了
-            if current.is_active:
-                result.add(current)
-            current = current.inherits_from
+            ancestor = role_map.get(current_id)  # 内存查找，不查库
+            if ancestor is None:
+                break  # 已停用的祖先不在 map 里
+            result.add(ancestor)
+            seen_ids.add(current_id)
+            current_id = ancestor.inherits_from_id
             depth += 1
     return result
 
@@ -142,15 +163,46 @@ def get_role_perm_sources(role) -> dict[str, Role]:
 def get_user_perm_codes(user) -> frozenset[str]:
     """解析用户的有效权限码集合。
 
-    v0.12.0 起含角色继承。仍不含缓存（v0.16.0）——
-    缓存是优化，优化必须建立在正确之上。
+    v0.12.0 起含角色继承，v0.16.0 起含两级缓存。
+
+    注意缓存是**包在原有逻辑外面**的——_resolve_perm_codes() 就是
+    v0.12.0 的函数体，一行没改。好的抽象让优化可以后加。
     """
     if not user or not user.is_authenticated or not user.is_active:
         return frozenset()
 
     if user.is_superuser:
-        return ALL_PERMS  # 短路，不查库
+        return ALL_PERMS  # 短路，连缓存路径都不进
 
+    # L1 请求级：挂在 user 对象上而不是 request 上——services 不认识 request
+    # （ADR-013），挂 user 上 Web 层和 API 层都能用。
+    #
+    # ⚠️ L1 必须带版本校验。bump_version() 只让 L2 的 key 不可达，
+    #    动不了已经挂在 user 对象上的属性。同一个请求里先改权限再读权限
+    #    （或测试里复用同一个 user 对象）就会读到过期值。
+    #    代价是每次多一次 cache.get(版本号)——相比 50 次重复的 DB 解析，
+    #    这个代价可以忽略。
+    version = get_version()
+    cached = getattr(user, "_rbac_perm_cache", None)
+    if cached is not None and cached[0] == version:
+        return cached[1]
+
+    # L2 进程外
+    key = perms_key(user.pk)
+    codes = cache.get(key)
+    if codes is None:
+        codes = _resolve_perm_codes(user)
+        cache.set(key, codes, TTL)
+
+    try:
+        user._rbac_perm_cache = (version, codes)
+    except AttributeError:  # AnonymousUser 等不可写属性的对象
+        pass
+    return codes
+
+
+def _resolve_perm_codes(user) -> frozenset[str]:
+    """真正查库的部分。v0.12.0 的函数体原样搬进来，一行没改。"""
     direct_roles = Role.objects.filter(user_roles__user=user, is_active=True)
     all_roles = expand_roles(direct_roles)  # ← RBAC0 -> RBAC1 的全部改动
     if not all_roles:
@@ -208,6 +260,10 @@ def save_role_permissions(role, permission_ids):
     RolePermission.objects.bulk_create(
         [RolePermission(role=role, permission_id=pid) for pid in sorted(valid_ids)]
     )
+    # ⚠️ bulk_create **不触发** post_save 信号——光挂 signals.py 是不够的。
+    #    （queryset.delete() 会触发 post_delete，但 bulk_create/bulk_update 不会。）
+    #    这里必须显式 bump 一次，否则改完权限缓存不失效。
+    bump_version()
     return valid_ids
 
 
@@ -233,6 +289,10 @@ def save_user_roles(user, role_ids, granted_by=None):
             for rid in sorted(valid_ids)
         ]
     )
+    # ⚠️ bulk_create **不触发** post_save 信号——光挂 signals.py 是不够的。
+    #    （queryset.delete() 会触发 post_delete，但 bulk_create/bulk_update 不会。）
+    #    这里必须显式 bump 一次，否则改完权限缓存不失效。
+    bump_version()
     return valid_ids
 
 
@@ -377,6 +437,10 @@ def get_role_custom_dept_ids(role) -> set[int]:
 
     from apps.accounts.models import Department
 
+    cached = cache.get(role_depts_key(role.pk))
+    if cached is not None:
+        return cached
+
     paths = list(
         Department.objects.filter(role_departments__role=role, is_active=True).values_list(
             "path", flat=True
@@ -384,11 +448,14 @@ def get_role_custom_dept_ids(role) -> set[int]:
     )
     if not paths:
         # 选了 CUSTOM 却一个部门都没勾 -> 空集，不是全集
+        cache.set(role_depts_key(role.pk), set(), TTL)
         return set()
     condition = reduce(operator.or_, (Q(path__startswith=p) for p in paths))
-    return set(
+    result = set(
         Department.objects.filter(condition, is_active=True).values_list("id", flat=True)
     )
+    cache.set(role_depts_key(role.pk), result, TTL)
+    return result
 
 
 @transaction.atomic
@@ -404,6 +471,7 @@ def save_role_departments(role, department_ids):
 
     RoleDepartment.objects.filter(role=role).delete()
     if role.data_scope != DataScope.CUSTOM:
+        bump_version()
         return set()
 
     valid_ids = set(
@@ -414,6 +482,10 @@ def save_role_departments(role, department_ids):
     RoleDepartment.objects.bulk_create(
         [RoleDepartment(role=role, department_id=d) for d in sorted(valid_ids)]
     )
+    # ⚠️ bulk_create **不触发** post_save 信号——光挂 signals.py 是不够的。
+    #    （queryset.delete() 会触发 post_delete，但 bulk_create/bulk_update 不会。）
+    #    这里必须显式 bump 一次，否则改完权限缓存不失效。
+    bump_version()
     return valid_ids
 
 

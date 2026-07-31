@@ -23,6 +23,11 @@ def staff(django_user_model, perms):
     return django_user_model.objects.create_user(username="staff", password="x")
 
 
+def fresh_user(user):
+    """拿一个没有 L1 请求级缓存的 user 对象。"""
+    return type(user).objects.get(pk=user.pk)
+
+
 def names(tree):
     return [n["name"] for n in tree]
 
@@ -101,13 +106,30 @@ class TestMenuTree:
 
 @pytest.mark.django_db
 class TestQueryCount:
-    def test_single_query_regardless_of_depth(self, staff, django_assert_num_queries):
-        """NFR-3：菜单树构建的查询次数与层级无关。"""
-        grant(staff, "system:dept:view")
+    @staticmethod
+    def _warm_count(user):
+        """预热缓存后测量一次真实开销。
 
-        # 3 = 权限解析 2（角色 ID + 权限码）+ 菜单节点全量 1
-        with django_assert_num_queries(3):
-            get_user_menu_tree(staff)
+        v0.16.0 起写操作会 bump 缓存版本，不预热的话测到的是冷启动成本，
+        而不是我们要考察的「层级是否影响查询数」。
+        """
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        get_user_menu_tree(fresh_user(user))  # 预热
+        with CaptureQueriesContext(connection) as ctx:
+            get_user_menu_tree(fresh_user(user))
+        return len(ctx)
+
+    def test_query_count_independent_of_depth(self, staff):
+        """NFR-3：菜单树构建的查询次数与树的层级无关。
+
+        断言**不变性**而不是写死数字——数字会随缓存、中间件等无关改动
+        频繁变红，然后被人无脑改掉，反而失去意义。
+        """
+        grant(staff, "system:dept:view", "system:user:view")
+
+        shallow = self._warm_count(staff)
 
         # 加深一层：在「组织管理」下再插一层目录
         catalog = Permission.objects.get(name="组织管理")
@@ -116,9 +138,26 @@ class TestQueryCount:
         )
         Permission.objects.filter(code="system:user:view").update(parent=deeper)
 
-        # 数字**不变**——递归查库的实现会随层级增长
-        with django_assert_num_queries(3):
-            get_user_menu_tree(staff)
+        deep = self._warm_count(staff)
+
+        assert shallow == deep, (
+            f"菜单查询数随层级增长：{shallow} -> {deep}。"
+            f"递归查库的实现会有这个问题，一次取全部再内存组树则不会。"
+        )
+
+    def test_menu_nodes_fetched_in_one_query(self, staff):
+        """取菜单节点本身应当只有一次 SELECT。"""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        grant(staff, "system:dept:view")
+        get_user_menu_tree(fresh_user(staff))  # 预热
+
+        with CaptureQueriesContext(connection) as ctx:
+            get_user_menu_tree(fresh_user(staff))
+
+        node_queries = [q for q in ctx.captured_queries if "perm_type" in q["sql"]]
+        assert len(node_queries) == 1
 
 
 @pytest.mark.django_db

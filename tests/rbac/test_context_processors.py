@@ -33,8 +33,8 @@ class TestLaziness:
     def test_resolves_once(self, staff, django_assert_num_queries):
         grant(staff, "system:dept:view")
         perms = LazyPermSet(staff)
-        # 2 = 角色 ID + 权限码（v0.16.0 加缓存后会降下来）
-        with django_assert_num_queries(2):
+        # 3 = 全量角色映射 + 用户的直接角色 + 权限码（首次，L2 未预热）
+        with django_assert_num_queries(3):
             assert "system:dept:view" in perms
             # 后续 50 次判断不再查库
             for _ in range(50):

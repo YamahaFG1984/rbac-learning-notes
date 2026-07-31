@@ -138,8 +138,9 @@ class TestResolution:
     def test_query_count(self, perms, django_user_model, django_assert_num_queries):
         user = django_user_model.objects.create_user(username="u", password="x")
         UserRole.objects.create(user=user, role=make_role("r", "system:dept:view"))
-        # 2 = 角色 ID SELECT + 权限码 SELECT。本 tag 无缓存，v0.16.0 会降到 0/1。
-        with django_assert_num_queries(2):
+        # 3 = 全量角色映射 + 用户的直接角色 + 权限码（首次，L2 未预热）。
+        # 第二次同一 user 对象是 0 次，见 tests/rbac/test_cache.py。
+        with django_assert_num_queries(3):
             get_user_perm_codes(user)
 
 

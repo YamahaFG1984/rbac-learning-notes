@@ -241,8 +241,9 @@ class TestSqlPushdown:
     def test_single_query_regardless_of_row_count(self, world, django_assert_num_queries):
         staff = world["staff"]
         assign(staff, DataScope.SELF_ONLY)
-        # 2 = 角色展开 + 工单查询。过滤在 SQL 里完成，不是先查全量再筛。
-        with django_assert_num_queries(2):
+        # 3 = 全量角色映射 + 用户的直接角色 + 工单查询。
+        # 过滤在 SQL 里完成，不是先查全量再在 Python 里筛。
+        with django_assert_num_queries(3):
             list(Ticket.objects.for_user(staff))
 
 

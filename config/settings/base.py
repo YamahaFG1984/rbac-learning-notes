@@ -117,6 +117,8 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = False
 # 深度限制不只是防死循环——5 层以上的角色继承链，人已经无法在脑内推演了。
 # 这条限制是在保护**可运维性**，不只是保护程序。
 RBAC_MAX_ROLE_DEPTH = 5
+RBAC_CACHE_TTL = 1800  # 30 分钟
+RBAC_VERSION_KEY = "rbac:version"
 
 # 登录失败锁定（FR-5.3）
 LOGIN_FAIL_MAX_ATTEMPTS = 5

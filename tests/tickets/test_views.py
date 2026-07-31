@@ -57,16 +57,17 @@ def tickets(staff, depts, django_user_model):
     return made
 
 
+def widen(role):
+    """把角色的数据范围放宽到全部，便于只关注功能权限的测试。"""
+    from apps.rbac.constants import DataScope
+
+    role.data_scope = DataScope.ALL
+    role.save()
+    return role
+
+
 @pytest.mark.django_db
 class TestFunctionalPermissions:
-    @staticmethod
-    def _widen(role):
-        from apps.rbac.constants import DataScope
-
-        role.data_scope = DataScope.ALL
-        role.save()
-        return role
-
     def test_list_requires_view_perm(self, client, staff):
         client.force_login(staff)
         assert client.get(reverse("tickets:list")).status_code == 403
@@ -75,7 +76,7 @@ class TestFunctionalPermissions:
         assert client.get(reverse("tickets:list")).status_code == 200
 
     def test_delete_button_hidden_and_post_rejected(self, client, staff, tickets):
-        self._widen(grant(staff, TicketPerm.VIEW))
+        widen(grant(staff, TicketPerm.VIEW))
         client.force_login(staff)
 
         html = client.get(reverse("tickets:list")).content.decode()
@@ -159,9 +160,13 @@ class TestQueryCount:
         忘了 select_related 的话，40 条工单会额外产生 120 次查询
         （creator / assignee / department 各一次）。
         """
-        grant(staff, TicketPerm.VIEW)
+        widen(grant(staff, TicketPerm.VIEW))
         client.force_login(staff)
         url = reverse("tickets:list")
+
+        # ⚠️ 先预热权限缓存（v0.16.0 起），否则第一次测量会多算几次
+        # 冷启动的权限解析，导致 few > many 的假阳性。
+        client.get(url)
 
         for i in range(5):
             Ticket.objects.create(title=f"a{i}", creator=staff, department=depts["cs"])

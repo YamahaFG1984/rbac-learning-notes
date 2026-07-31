@@ -65,6 +65,12 @@ class Command(BaseCommand):
                 "（未变化 {unchanged} 个）".format(**self.stats)
             )
         )
+        # queryset.update() 不触发 post_save 信号，显式失效一次
+        if not self.dry_run:
+            from apps.rbac.cache import bump_version
+
+            bump_version()
+
         if self.dry_run:
             transaction.set_rollback(True)
 
