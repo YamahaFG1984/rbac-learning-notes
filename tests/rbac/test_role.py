@@ -2,6 +2,7 @@ from unittest.mock import patch
 
 import pytest
 from django.core.management import call_command
+from django.urls import reverse
 
 from apps.rbac.constants import DataScope
 from apps.rbac.models import Permission, Role, RolePermission
@@ -130,7 +131,7 @@ class TestRoleViews:
         # 关键：业务那 3 次与树的深度和节点数无关，菜单那 1 次与层级无关。
         # 递归查库的实现会变成 O(节点数)。超管走 ALL_PERMS 短路，鉴权本身不产生查询。
         with django_assert_num_queries(9):
-            resp = admin_client_su.get(f"/rbac/roles/{role.pk}/permissions/")
+            resp = admin_client_su.get(reverse("rbac:role_perm_assign", args=[role.pk]))
         assert resp.status_code == 200
 
     def test_perm_assign_post_saves(self, admin_client_su, perms):
@@ -138,7 +139,7 @@ class TestRoleViews:
         ids = [str(i) for i in perms.values_list("id", flat=True)[:2]]
 
         resp = admin_client_su.post(
-            f"/rbac/roles/{role.pk}/permissions/", {"permissions": ids}
+            reverse("rbac:role_perm_assign", args=[role.pk]), {"permissions": ids}
         )
 
         assert resp.status_code == 302
@@ -147,7 +148,7 @@ class TestRoleViews:
     def test_anonymous_cannot_reach_perm_assign(self, client, perms):
         """v0.9.0 的鉴权确实生效了。"""
         role = Role.objects.create(code="r", name="角色")
-        resp = client.get(f"/rbac/roles/{role.pk}/permissions/")
+        resp = client.get(reverse("rbac:role_perm_assign", args=[role.pk]))
         assert resp.status_code == 302  # 跳登录页
 
     def test_form_excludes_is_builtin(self):

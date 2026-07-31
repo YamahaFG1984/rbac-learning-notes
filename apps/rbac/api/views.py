@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.rbac.models import Permission, Role
@@ -29,6 +29,17 @@ class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = PermissionSerializer
     queryset = Permission.objects.all()
     perm_map = {"list": PermPerm.VIEW, "retrieve": PermPerm.VIEW}
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def health(request):
+    """连通性探针。
+
+    刻意不需要认证——前端用它验证同域代理是否打通（fe-v0.1.0）。
+    不返回任何业务信息。
+    """
+    return Response({"detail": "ok"})
 
 
 @api_view(["GET"])
