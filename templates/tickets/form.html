@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block page_title %}{{ title }}{% endblock %}
+{% block content %}
+<form method="post" class="max-w-2xl space-y-4 rounded-lg bg-white p-6 shadow">
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+    <div class="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{{ form.non_field_errors }}</div>
+  {% endif %}
+  {% for field in form %}{% include "_partials/_form_field.html" %}{% endfor %}
+  <div class="flex gap-2 pt-2">
+    <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">保存</button>
+    <a href="{% url 'tickets:list' %}" class="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">取消</a>
+  </div>
+</form>
+{% endblock %}

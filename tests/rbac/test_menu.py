@@ -46,15 +46,16 @@ class TestMenuTree:
         """
         grant(staff, "system:dept:view")
         tree = get_user_menu_tree(staff)
-        assert names(tree) == ["组织管理"]  # 「权限管理」整个不出现
+        assert names(tree) == ["组织管理"]  # 「权限管理」「工单管理」整个不出现
         assert names(tree[0]["children"]) == ["部门管理"]  # 「用户管理」也不出现
 
     def test_superuser_sees_everything(self, django_user_model, perms):
         su = django_user_model.objects.create_superuser(username="su", password="x")
         tree = get_user_menu_tree(su)
-        assert names(tree) == ["组织管理", "权限管理"]
-        assert len(tree[0]["children"]) == 2
-        assert len(tree[1]["children"]) == 2
+        # 目录按 order_num 排：工单管理(5) < 组织管理(10) < 权限管理(20)
+        assert names(tree) == ["工单管理", "组织管理", "权限管理"]
+        assert names(tree[1]["children"]) == ["部门管理", "用户管理"]
+        assert names(tree[2]["children"]) == ["角色管理", "权限点"]
 
     def test_buttons_never_appear(self, django_user_model, perms):
         su = django_user_model.objects.create_superuser(username="su", password="x")
@@ -79,8 +80,9 @@ class TestMenuTree:
     def test_children_ordered_by_order_num(self, django_user_model, perms):
         su = django_user_model.objects.create_superuser(username="su", password="x")
         tree = get_user_menu_tree(su)
+        org = next(n for n in tree if n["name"] == "组织管理")
         # 部门管理 order=10，用户管理 order=20
-        assert names(tree[0]["children"]) == ["部门管理", "用户管理"]
+        assert names(org["children"]) == ["部门管理", "用户管理"]
 
     def test_url_is_reversed(self, staff):
         grant(staff, "system:dept:view")

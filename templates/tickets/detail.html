@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ ticket.title }}{% endblock %}
+{% block page_title %}工单详情{% endblock %}
+{% block page_actions %}
+  {% if 'ticket:ticket:update' in perms %}
+  <a href="{% url 'tickets:update' ticket.pk %}"
+     class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">编辑</a>
+  {% endif %}
+  <a href="{% url 'tickets:list' %}"
+     class="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">返回</a>
+{% endblock %}
+
+{% block content %}
+<div class="rounded-lg bg-white p-6 shadow">
+  <h2 class="text-lg font-medium text-gray-900">{{ ticket.title }}</h2>
+  <dl class="mt-4 grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
+    <div><dt class="text-gray-500">状态</dt><dd class="mt-1">{{ ticket.get_status_display }}</dd></div>
+    <div><dt class="text-gray-500">优先级</dt><dd class="mt-1">{{ ticket.get_priority_display }}</dd></div>
+    <div><dt class="text-gray-500">创建人</dt><dd class="mt-1">{{ ticket.creator }}</dd></div>
+    <div><dt class="text-gray-500">归属部门</dt><dd class="mt-1">{{ ticket.department.name }}</dd></div>
+    <div><dt class="text-gray-500">处理人</dt><dd class="mt-1">{{ ticket.assignee|default:"—" }}</dd></div>
+    <div><dt class="text-gray-500">创建时间</dt><dd class="mt-1">{{ ticket.created_at|date:"Y-m-d H:i" }}</dd></div>
+  </dl>
+  <div class="mt-6 border-t border-gray-100 pt-4">
+    <p class="whitespace-pre-wrap text-sm text-gray-700">{{ ticket.content|default:"（无内容）" }}</p>
+  </div>
+</div>
+{% endblock %}

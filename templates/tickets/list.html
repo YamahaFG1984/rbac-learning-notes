@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}工单列表{% endblock %}
+{% block page_title %}工单列表{% endblock %}
+{% block page_actions %}
+  {% if 'ticket:ticket:create' in perms %}
+  <a href="{% url 'tickets:create' %}"
+     class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建工单</a>
+  {% endif %}
+{% endblock %}
+
+{% block content %}
+<form method="get" class="mb-4 flex flex-wrap gap-2">
+  <input type="text" name="kw" value="{{ kw }}" placeholder="标题 / 内容"
+         class="rounded-md border-0 px-2 py-1.5 text-sm ring-1 ring-inset ring-gray-300">
+  <select name="status" class="rounded-md border-0 px-2 py-1.5 text-sm ring-1 ring-inset ring-gray-300">
+    <option value="">全部状态</option>
+    {% for v,label in statuses %}<option value="{{ v }}" {% if request.GET.status == v %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <select name="priority" class="rounded-md border-0 px-2 py-1.5 text-sm ring-1 ring-inset ring-gray-300">
+    <option value="">全部优先级</option>
+    {% for v,label in priorities %}<option value="{{ v }}" {% if request.GET.priority == v|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="rounded-md bg-white px-3 py-1.5 text-sm ring-1 ring-gray-300 hover:bg-gray-50">筛选</button>
+</form>
+
+<div class="overflow-x-auto rounded-lg bg-white shadow">
+  <table class="min-w-full divide-y divide-gray-200">
+    <thead class="bg-gray-50">
+      <tr>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">标题</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">状态</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">优先级</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">创建人</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">归属部门</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">处理人</th>
+        <th class="px-4 py-2 text-left text-xs font-medium uppercase text-gray-500">操作</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-gray-100">
+      {% for t in page %}
+      <tr>
+        <td class="px-4 py-2 text-sm"><a href="{% url 'tickets:detail' t.pk %}" class="text-indigo-600 hover:underline">{{ t.title }}</a></td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ t.get_status_display }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ t.get_priority_display }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ t.creator }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ t.department.name }}</td>
+        <td class="px-4 py-2 text-sm text-gray-600">{{ t.assignee|default:"—" }}</td>
+        <td class="space-x-2 whitespace-nowrap px-4 py-2 text-sm">
+          {% if 'ticket:ticket:assign' in perms %}
+          <a href="{% url 'tickets:assign' t.pk %}" class="text-indigo-600 hover:underline">派单</a>
+          {% endif %}
+          {% if 'ticket:ticket:update' in perms %}
+          <a href="{% url 'tickets:update' t.pk %}" class="text-indigo-600 hover:underline">编辑</a>
+          {% endif %}
+          {% if 'ticket:ticket:delete' in perms %}
+          <form method="post" action="{% url 'tickets:delete' t.pk %}" class="inline">
+            {% csrf_token %}<button type="submit" class="text-red-600 hover:underline">删除</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7" class="px-4 py-6 text-center text-sm text-gray-400">暂无工单</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% include "_partials/_pagination.html" %}
+{% endblock %}
