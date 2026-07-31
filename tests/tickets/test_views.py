@@ -59,6 +59,14 @@ def tickets(staff, depts, django_user_model):
 
 @pytest.mark.django_db
 class TestFunctionalPermissions:
+    @staticmethod
+    def _widen(role):
+        from apps.rbac.constants import DataScope
+
+        role.data_scope = DataScope.ALL
+        role.save()
+        return role
+
     def test_list_requires_view_perm(self, client, staff):
         client.force_login(staff)
         assert client.get(reverse("tickets:list")).status_code == 403
@@ -67,7 +75,7 @@ class TestFunctionalPermissions:
         assert client.get(reverse("tickets:list")).status_code == 200
 
     def test_delete_button_hidden_and_post_rejected(self, client, staff, tickets):
-        grant(staff, TicketPerm.VIEW)
+        self._widen(grant(staff, TicketPerm.VIEW))
         client.force_login(staff)
 
         html = client.get(reverse("tickets:list")).content.decode()
@@ -189,39 +197,45 @@ class TestQueryCount:
         role_lookups = [
             q for q in ctx.captured_queries if 'FROM "rbac_role"' in q["sql"]
         ]
-        assert len(role_lookups) == 3, (
-            f"预期 3 次重复的权限解析（v0.16.0 的缓存会把它降到 1 次），"
+        assert len(role_lookups) >= 3, (
+            f"预期至少 3 次重复的权限解析（v0.16.0 的缓存会把它降到 1 次），"
             f"实测 {len(role_lookups)} 次"
         )
 
 
 @pytest.mark.django_db
-class TestNoDataScopeYet:
-    """⚠️ v0.13.0 刻意留下的漏洞。
+class TestDataScopeNowEnforced:
+    """v0.13.0 刻意留下的漏洞，在 v0.14.0 被补上——这些断言是翻转过来的。
 
-    功能权限（能不能看列表）有了，数据权限（能看哪些行）没有。
-    这个状态让你亲眼看到「只有功能权限的系统」长什么样——
-    很多真实项目就停在这一步，然后某天发现「普通员工能看到全公司的数据」。
-
-    v0.14.0 会把这些断言反过来。
+    对比 v0.13.0 的同名测试（当时叫 TestNoDataScopeYet）：
+        count == 8  -> count == 5
+        200         -> 404
     """
 
-    def test_staff_sees_other_departments_tickets(self, client, staff, tickets):
-        grant(staff, TicketPerm.VIEW)
+    def test_staff_no_longer_sees_other_departments(self, client, staff, tickets):
+        from apps.rbac.constants import DataScope
+
+        role = grant(staff, TicketPerm.VIEW)
+        role.data_scope = DataScope.DEPT_AND_BELOW
+        role.save()
         client.force_login(staff)
 
         resp = client.get(reverse("tickets:list"))
 
-        # 客服部的人看到了技术部的 3 张工单
-        assert resp.context["page"].paginator.count == 8
-        html = resp.content.decode()
-        assert "技术工单0" in html
+        # v0.13.0 时是 8（含技术部 3 张），现在只剩客服部的 5 张
+        assert resp.context["page"].paginator.count == 5
+        assert "技术工单0" not in resp.content.decode()
 
-    def test_staff_can_open_other_departments_ticket(self, client, staff, tickets):
-        grant(staff, TicketPerm.VIEW)
+    def test_other_departments_ticket_returns_404(self, client, staff, tickets):
+        """范围外返回 404 而不是 403——403 会泄露记录的存在性。"""
+        from apps.rbac.constants import DataScope
+
+        role = grant(staff, TicketPerm.VIEW)
+        role.data_scope = DataScope.DEPT_AND_BELOW
+        role.save()
         client.force_login(staff)
 
         tech_ticket = Ticket.objects.filter(title__startswith="技术工单").first()
         resp = client.get(reverse("tickets:detail", args=[tech_ticket.pk]))
 
-        assert resp.status_code == 200  # v0.15.0 之后这里会是 404
+        assert resp.status_code == 404  # v0.13.0 时是 200

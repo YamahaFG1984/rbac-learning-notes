@@ -21,3 +21,10 @@ class PermRequiredMixin:
         ):
             raise PermissionDenied
         return super().dispatch(request, *args, **kwargs)
+
+
+class ScopedListMixin:
+    """列表类视图的数据范围过滤。"""
+
+    def get_queryset(self):
+        return super().get_queryset().for_user(self.request.user)

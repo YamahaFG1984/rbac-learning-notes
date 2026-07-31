@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 
 from apps.accounts.models import Department
+from apps.common.managers import DataScopedQuerySet
 from apps.common.models import TimestampedModel
 
 from .constants import Priority, Status
@@ -13,9 +14,21 @@ class Ticket(TimestampedModel):
     选工单作为业务示例，是因为它天然具备「创建人 / 处理人 / 归属部门」
     三个维度，恰好能演示数据权限的各种情形。
 
-    ⚠️ v0.13.0：creator 和 department 现在只是普通字段。
-       它们将在 v0.14.0 成为数据权限的 owner_field 和 dept_field。
+    v0.14.0 起接入数据权限：只需声明 ScopeConfig 三行 + 换一个 Manager，
+    业务代码的其余部分完全不用动（FR-7.6）。
     """
+
+    class ScopeConfig:
+        """数据范围的归属字段声明（ADR-007）。
+
+        build_scope_q() 读这个配置生成 Q 对象。接入成本 = 3 行。
+
+        可选的 extra_q(user) 钩子是通往 ABAC 的门，但只开一条缝。
+        """
+
+        owner_field = "creator"  # SELF_ONLY 用它
+        dept_field = "department"  # 各种部门范围用它
+
 
     title = models.CharField("标题", max_length=128)
     content = models.TextField("内容", blank=True)
@@ -57,6 +70,8 @@ class Ticket(TimestampedModel):
         on_delete=models.PROTECT,
         related_name="tickets",
     )
+
+    objects = DataScopedQuerySet.as_manager()
 
     class Meta:
         verbose_name = "工单"

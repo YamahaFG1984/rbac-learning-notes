@@ -13,19 +13,21 @@ from .models import Ticket
 from .permissions import TicketPerm
 
 
-def _base_queryset():
-    # select_related 避免列表页 N+1：100 条工单不该产生 100+ 次查询
-    return Ticket.objects.select_related("creator", "assignee", "department")
+def _base_queryset(user):
+    """业务查询的统一入口。
+
+    .for_user() 必须**显式**调用——这样你能通过 grep 找出所有
+    绕过数据权限的查询（ADR-009）。
+    """
+    return Ticket.objects.select_related("creator", "assignee", "department").for_user(
+        user
+    )
 
 
 @login_required
 @require_perm(TicketPerm.VIEW)
 def ticket_list(request):
-    # ⚠️ v0.13.0：此处尚无数据权限过滤，任何有 view 权限的用户都能看到
-    #    **全部**工单——包括其他部门的。这是刻意留下的中间态，v0.14.0 补上。
-    #
-    #    很多真实项目就停在这一步，然后在某天发现「普通员工能看到全公司的数据」。
-    qs = _base_queryset()
+    qs = _base_queryset(request.user)
 
     kw = request.GET.get("kw", "").strip()
     if kw:
@@ -51,7 +53,7 @@ def ticket_list(request):
 @login_required
 @require_perm(TicketPerm.VIEW)
 def ticket_detail(request, pk):
-    ticket = get_object_or_404(_base_queryset(), pk=pk)
+    ticket = get_object_or_404(_base_queryset(request.user), pk=pk)
     return render(request, "tickets/detail.html", {"ticket": ticket})
 
 

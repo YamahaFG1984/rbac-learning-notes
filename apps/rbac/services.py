@@ -15,13 +15,14 @@ from typing import Iterable
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 # django.urls.reverse 是「URL name -> 路径」的纯函数，不依赖 request/response，
 # 且 Web 层与 API 层都需要它。它在 ADR-013 的允许清单内——
 # 被禁的是 django.http / shortcuts / views / rest_framework 这些
 # 「响应怎么发」的东西，见 tests/rbac/test_services.py::TestKernelPurity。
 from django.urls import NoReverseMatch, reverse
 
-from .constants import PermType
+from .constants import DataScope, PermType
 from .models import Permission, Role, RolePermission
 
 
@@ -319,3 +320,123 @@ def get_user_menu_tree(user) -> list[dict]:
         ]
 
     return assemble(None)
+
+
+# --------------------------------------------------------------------------- #
+# 数据权限（ADR-007）
+#
+# 功能权限和数据权限的实现机制根本不同，必须彻底分离：
+#
+#                功能权限            数据权限
+#   回答          能不能执行          能对哪些行执行
+#   结果          布尔值              集合（SQL 的 WHERE 条件）
+#   位置          视图层装饰器        Manager 层
+#   绕过的后果    垂直越权            水平越权
+#
+# 试图用一套机制表达两者，是权限系统腐化的头号原因。
+# --------------------------------------------------------------------------- #
+
+
+def get_user_dept_ids(user, include_children: bool = True) -> set[int]:
+    """当前用户的部门 ID 集合。
+
+    返回**集合**而非单值——现在用户只有一个部门（FR-1.4 的简化），
+    返回单元素集合看起来很傻，但这是刻意的：将来支持兼岗（一人多部门）时，
+    只需改这一个函数，所有调用方都不用动。
+
+    注意分寸：我们**预留了形状，但没有预先实现**。预留形状的成本是 0
+    （就是个返回类型的选择），预先实现兼岗的成本是一整套模型改造。
+    """
+    from apps.accounts.models import Department
+
+    dept = getattr(user, "department", None)
+    # 默认拒绝 4：用户无部门 -> 空集，不是全集。
+    # 写成返回全部部门的话，无部门用户会绕过所有部门限制。
+    if dept is None:
+        return set()
+    if not include_children:
+        return {dept.id}
+    return set(
+        Department.objects.filter(path__startswith=dept.path, is_active=True).values_list(
+            "id", flat=True
+        )
+    )
+
+
+def get_role_custom_dept_ids(role) -> set[int]:
+    """角色自定义数据范围的部门 ID 集合。v0.15.0 实现，此处先返回空集。"""
+    return set()
+
+
+def build_scope_q(user, cfg) -> Q | None:
+    """构造数据范围过滤条件。
+
+    返回 None       表示「不过滤」（全部数据）
+    返回 Q(pk__in=[]) 表示「空集」（默认拒绝）
+
+    ⚠️ 本函数有**四处默认拒绝**，每一处写反都是严重越权：
+
+        Q()          空条件   -> 不过滤 -> 返回全集   ❌
+        Q(pk__in=[]) 不可满足 -> 返回空集             ✅
+
+    差两个字符，安全后果天差地别。这四个分支在正常使用中永远不会被触发，
+    所以**只有测试能保证它们是对的**。
+
+    cfg.owner_field: 归属人字段名，如 "creator"
+    cfg.dept_field:  归属部门字段名，如 "department"
+    """
+    # 默认拒绝 1：未登录 / 已禁用
+    if not user or not user.is_authenticated or not user.is_active:
+        return Q(pk__in=[])
+
+    if user.is_superuser:
+        return None  # 短路，在任何查询之前
+
+    roles = expand_roles(Role.objects.filter(user_roles__user=user, is_active=True))
+
+    # 默认拒绝 2：无任何角色。
+    # 这是最常见的状态（新建用户还没配角色），也是后果最严重的：
+    # 写成 Q() 就是「新用户默认看到全公司数据」。
+    if not roles:
+        return Q(pk__in=[])
+
+    owner_field, dept_field = cfg.owner_field, cfg.dept_field
+    q = Q()
+    matched = False
+
+    for role in roles:
+        scope = role.data_scope
+
+        if scope == DataScope.ALL:
+            return None  # 短路：最宽范围，无需再算
+
+        if scope == DataScope.DEPT_AND_BELOW:
+            sub = Q(**{f"{dept_field}_id__in": get_user_dept_ids(user, True)})
+        elif scope == DataScope.DEPT_ONLY:
+            sub = Q(**{f"{dept_field}_id__in": get_user_dept_ids(user, False)})
+        elif scope == DataScope.SELF_ONLY:
+            sub = Q(**{f"{owner_field}_id": user.pk})
+        elif scope == DataScope.CUSTOM:
+            sub = Q(**{f"{dept_field}_id__in": get_role_custom_dept_ids(role)})
+        else:
+            continue  # 枚举脏数据，跳过
+
+        # ⚠️ 真并集，不是「取最宽枚举」。
+        #
+        # 角色A=SELF_ONLY(4)、角色B=CUSTOM(5) 时，按编号取最宽会得到
+        # SELF_ONLY——丢掉了角色B授予的市场部数据。但 RBAC 的基本语义
+        # 就是「多角色权限取并集」，数据范围是权限的一部分，
+        # 没有理由用不同的合并规则。
+        q |= sub
+        matched = True
+
+    # 默认拒绝 3：所有角色的 scope 都不可识别（枚举脏数据）
+    if not matched:
+        return Q(pk__in=[])
+
+    # ABAC 扩展点：业务模型可定义 extra_q(user) 返回附加条件。
+    # 这是通往 ABAC 的门，但我们只开一条缝——开太大就重新发明了策略引擎。
+    extra = getattr(cfg, "extra_q", None)
+    if extra:
+        q &= extra(user)
+    return q
