@@ -65,12 +65,16 @@ def ticket_detail(request, pk):
 def ticket_create(request):
     form = TicketForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
+        # ⚠️ 必须**先**检查用户有没有部门，再赋值。
+        #    department 是非空外键，先赋 None 再读 ticket.department
+        #    会抛 RelatedObjectDoesNotExist 而不是返回 None——
+        #    非空外键的「空值」读取行为和普通字段不一样。
+        if request.user.department_id is None:
+            messages.error(request, "你尚未归属任何部门，无法创建工单")
+            return redirect("tickets:list")
         ticket = form.save(commit=False)
         ticket.creator = request.user
         ticket.department = request.user.department  # 快照，见模型注释
-        if ticket.department is None:
-            messages.error(request, "你尚未归属任何部门，无法创建工单")
-            return redirect("tickets:list")
         ticket.save()
         messages.success(request, "工单已创建")
         return redirect("tickets:list")

@@ -1,0 +1,13 @@
+[run]
+source = apps
+omit =
+    */migrations/*
+    */apps.py
+    */__init__.py
+    */tests/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if TYPE_CHECKING:
