@@ -605,3 +605,75 @@ def build_scope_q(user, cfg) -> Q | None:
     if extra:
         q &= extra(user)
     return q
+
+
+# --------------------------------------------------------------------------- #
+# 权限不可放大（ADR-011）
+# --------------------------------------------------------------------------- #
+
+
+def can_grant_role(granter, role) -> bool:
+    """granter 是否有资格把 role 授予他人。
+
+    **权限不可放大**：授权者必须拥有被授出角色的全部权限。
+
+    没有这条约束的话：小李有 system:role:assign_perm（能给角色配权限）
+    但自己没有 ticket:ticket:delete，他可以给自己的角色加上那个权限
+    ——这就是提权。
+
+    ⚠️ 这条约束在实践中有争议：
+       优点是杜绝自我提权；缺点是一个「权限管理员」如果本身权限很少就
+       配不了别的角色，而要让他能配就得给他所有权限——反而更危险。
+
+       折中方案（本项目不实现）：
+         · 引入「授权范围」：某个角色可以授予哪些角色，单独配置
+         · 双人授权：敏感角色的分配需两人确认
+         · 事后审计 + 告警：允许操作但立即通知安全团队
+    """
+    if granter is None or not getattr(granter, "is_authenticated", False):
+        return False
+    if granter.is_superuser:
+        return True
+    return get_role_effective_codes(role) <= set(get_user_perm_codes(granter))
+
+
+def filter_grantable_permission_ids(granter, permission_ids, existing_ids=()):
+    """把 granter 无权授出的权限点从提交列表中剔除，返回 (保留, 被拒)。
+
+    两条规则：
+
+    1. **不能授出自己没有的权限**——提交列表里 granter 不具备的一律拒绝。
+    2. **不能删掉自己授不出的既有权限**——角色原有的、granter 无权限的
+       权限点必须保留，无论它这次有没有被提交。
+
+       第 2 条容易被忽略。那些权限可能是更高权限的管理员配的；允许一个
+       低权限管理员把它们**移除**，同样是一种权限操纵（他可以借此关掉
+       某个安全相关的权限）。
+
+    ⚠️ 已知的 UX 瑕疵：界面上这些权限仍是可勾选的，用户取消勾选后保存，
+       它们会「自己变回来」。更好的做法是像继承权限那样渲染成
+       disabled 只读态（见 v0.12.0）。本项目保证后端行为正确 + 给出提示，
+       界面改进留作练习。
+    """
+    existing = set(existing_ids)
+    if granter is not None and getattr(granter, "is_superuser", False):
+        return set(permission_ids), set()
+
+    granter_codes = set(get_user_perm_codes(granter))
+    submitted = {int(pid) for pid in permission_ids}
+
+    def grantable(perm):
+        # catalog 没有权限码，不构成提权风险
+        return perm.code is None or perm.code in granter_codes
+
+    kept, rejected = set(), set()
+    for perm in Permission.objects.filter(id__in=submitted):
+        (kept if grantable(perm) else rejected).add(perm.id)
+
+    # 规则 2：既有的、granter 授不出的，一律保留
+    for perm in Permission.objects.filter(id__in=existing - submitted):
+        if not grantable(perm):
+            kept.add(perm.id)
+
+    rejected -= existing
+    return kept, rejected

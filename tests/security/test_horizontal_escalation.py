@@ -1,6 +1,9 @@
-"""水平越权 / IDOR 防护。
+"""水平越权 / IDOR：访问同级别他人的数据。
 
-上一个 tag 管住了列表，本 tag 管住单条记录——这是 IDOR 的主战场。
+v0.15.0 实现，v0.18.0 归入 tests/security/ 统一管理——
+安全测试和功能测试分开，是为了能单独跑、单独看覆盖情况：
+
+    pytest tests/security/ -v
 """
 
 import csv

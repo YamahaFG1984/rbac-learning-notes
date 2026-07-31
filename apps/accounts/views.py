@@ -8,7 +8,7 @@ from django.views.decorators.http import require_POST
 from apps.common.views import build_tree_rows
 from apps.rbac.decorators import require_perm
 from apps.rbac.models import Role
-from apps.rbac.services import get_user_role_ids, save_user_roles
+from apps.rbac.services import can_grant_role, get_user_role_ids, save_user_roles
 
 from .forms import DepartmentForm, UserCreateForm, UserUpdateForm
 from .models import Department, User
@@ -144,7 +144,16 @@ def user_role_assign(request, pk):
     if request.method == "POST":
         ids = request.POST.getlist("roles")
         granter = request.user if request.user.is_authenticated else None
-        saved = save_user_roles(user, ids, granted_by=granter)
+        # 权限不可放大：不能把自己不具备的角色授予他人（ADR-011）
+        allowed, refused = [], []
+        for role in Role.objects.filter(id__in=ids):
+            (allowed if can_grant_role(granter, role) else refused).append(role.pk)
+        if refused:
+            messages.warning(
+                request,
+                f"已忽略 {len(refused)} 个超出你自身权限范围的角色",
+            )
+        saved = save_user_roles(user, allowed, granted_by=granter)
         messages.success(request, f"已为「{user}」分配 {len(saved)} 个角色")
         return redirect("accounts:user_list")
 

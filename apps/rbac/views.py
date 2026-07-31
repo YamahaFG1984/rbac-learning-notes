@@ -16,6 +16,7 @@ from apps.common.views import build_tree_rows as _btr
 
 from .models import Permission, Role
 from .services import (
+    filter_grantable_permission_ids,
     get_role_department_ids,
     get_role_effective_codes,
     get_role_perm_sources,
@@ -87,7 +88,16 @@ def role_perm_assign(request, pk):
 
     if request.method == "POST":
         ids = request.POST.getlist("permissions")
-        saved = save_role_permissions(role, ids, actor=request.user)
+        # 权限不可放大：不能授出自己不具备的权限（ADR-011）
+        kept, rejected = filter_grantable_permission_ids(
+            request.user, ids, existing_ids=get_role_permission_ids(role)
+        )
+        saved = save_role_permissions(role, kept, actor=request.user)
+        if rejected:
+            messages.warning(
+                request,
+                f"已忽略 {len(rejected)} 项你自己不具备的权限——不能授出自己没有的权限",
+            )
         messages.success(request, f"已保存 {len(saved)} 项权限")
         return redirect("rbac:role_list")
 
