@@ -191,3 +191,24 @@ class UserRole(models.Model):
 
     def __str__(self):
         return f"{self.user} -> {self.role}"
+
+
+class RoleDepartment(models.Model):
+    """角色的自定义数据范围（仅 data_scope=CUSTOM 时有意义）。
+
+    用关联表而不是 PostgreSQL 的 ArrayField，是为了保持数据库可移植（ADR-014）。
+    代价是多一次 join，在部门数量级下可忽略。
+    """
+
+    role = models.ForeignKey(Role, on_delete=models.CASCADE, related_name="role_departments")
+    department = models.ForeignKey(
+        "accounts.Department", on_delete=models.CASCADE, related_name="role_departments"
+    )
+
+    class Meta:
+        verbose_name = "角色数据范围部门"
+        verbose_name_plural = verbose_name
+        unique_together = [("role", "department")]
+
+    def __str__(self):
+        return f"{self.role} -> {self.department}"

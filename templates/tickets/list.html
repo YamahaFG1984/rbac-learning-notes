@@ -2,6 +2,10 @@
 {% block title %}工单列表{% endblock %}
 {% block page_title %}工单列表{% endblock %}
 {% block page_actions %}
+  {% if 'ticket:ticket:export' in perms %}
+  <a href="{% url 'tickets:export' %}"
+     class="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">导出 CSV</a>
+  {% endif %}
   {% if 'ticket:ticket:create' in perms %}
   <a href="{% url 'tickets:create' %}"
      class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">新建工单</a>

@@ -364,8 +364,66 @@ def get_user_dept_ids(user, include_children: bool = True) -> set[int]:
 
 
 def get_role_custom_dept_ids(role) -> set[int]:
-    """角色自定义数据范围的部门 ID 集合。v0.15.0 实现，此处先返回空集。"""
-    return set()
+    """角色自定义数据范围的部门 ID 集合，**含各部门的子树**。
+
+    为什么含子树？管理员勾选「客服部」时，他的意图几乎肯定是
+    「客服部及其下属」——只含本级的话，勾 3 个子部门要点 4 次，
+    而且新增子部门后还要记得回来补勾。
+
+    2 次查询，与勾选的部门数量无关。
+    """
+    from functools import reduce
+    import operator
+
+    from apps.accounts.models import Department
+
+    paths = list(
+        Department.objects.filter(role_departments__role=role, is_active=True).values_list(
+            "path", flat=True
+        )
+    )
+    if not paths:
+        # 选了 CUSTOM 却一个部门都没勾 -> 空集，不是全集
+        return set()
+    condition = reduce(operator.or_, (Q(path__startswith=p) for p in paths))
+    return set(
+        Department.objects.filter(condition, is_active=True).values_list("id", flat=True)
+    )
+
+
+@transaction.atomic
+def save_role_departments(role, department_ids):
+    """保存角色的自定义部门范围。
+
+    ⚠️ 后端不能信任前端的显隐控制：用户选了 SELF_ONLY 却提交了一堆部门 ID
+       时必须忽略，否则一旦有人把 scope 改成 CUSTOM，就会出现意外的范围。
+    """
+    from apps.accounts.models import Department
+
+    from .models import RoleDepartment
+
+    RoleDepartment.objects.filter(role=role).delete()
+    if role.data_scope != DataScope.CUSTOM:
+        return set()
+
+    valid_ids = set(
+        Department.objects.filter(id__in=department_ids, is_active=True).values_list(
+            "id", flat=True
+        )
+    )
+    RoleDepartment.objects.bulk_create(
+        [RoleDepartment(role=role, department_id=d) for d in sorted(valid_ids)]
+    )
+    return valid_ids
+
+
+def get_role_department_ids(role):
+    """角色**直接勾选**的部门 ID（不含子树），用于表单回显。"""
+    from .models import RoleDepartment
+
+    return set(
+        RoleDepartment.objects.filter(role=role).values_list("department_id", flat=True)
+    )
 
 
 def build_scope_q(user, cfg) -> Q | None:

@@ -40,6 +40,9 @@
           <td class="space-x-2 whitespace-nowrap px-4 py-2 text-sm">
             <a href="{% url 'rbac:role_effective_perms' role.pk %}" class="text-gray-600 hover:underline">有效权限</a>
             {% if 'system:role:assign_perm' in perms %}
+            <a href="{% url 'rbac:role_data_scope' role.pk %}" class="text-indigo-600 hover:underline">数据范围</a>
+            {% endif %}
+            {% if 'system:role:assign_perm' in perms %}
             <a href="{% url 'rbac:role_perm_assign' role.pk %}" class="text-indigo-600 hover:underline">分配权限</a>
             {% endif %}
             {% if 'system:role:update' in perms %}

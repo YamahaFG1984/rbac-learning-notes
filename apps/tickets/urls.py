@@ -7,6 +7,7 @@ app_name = "tickets"
 urlpatterns = [
     path("", views.ticket_list, name="list"),
     path("create/", views.ticket_create, name="create"),
+    path("export/", views.ticket_export, name="export"),
     path("<int:pk>/", views.ticket_detail, name="detail"),
     path("<int:pk>/edit/", views.ticket_update, name="update"),
     path("<int:pk>/delete/", views.ticket_delete, name="delete"),

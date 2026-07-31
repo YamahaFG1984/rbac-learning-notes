@@ -11,11 +11,16 @@ from .decorators import require_perm
 
 from .forms import RoleForm
 from .permissions import PermPerm, RolePerm
+from apps.accounts.models import Department
+from apps.common.views import build_tree_rows as _btr
+
 from .models import Permission, Role
 from .services import (
+    get_role_department_ids,
     get_role_effective_codes,
     get_role_perm_sources,
     get_role_permission_ids,
+    save_role_departments,
     save_role_permissions,
 )
 
@@ -150,4 +155,32 @@ def role_effective_perms(request, pk):
         request,
         "rbac/role_effective_perms.html",
         {"role": role, "rows": rows, "chain": chain},
+    )
+
+
+@login_required
+@require_perm(RolePerm.ASSIGN_PERM)
+def role_data_scope(request, pk):
+    """配置角色的数据范围。选「自定义部门」时才勾选部门树。"""
+    role = get_object_or_404(Role, pk=pk)
+
+    if request.method == "POST":
+        scope = int(request.POST.get("data_scope", role.data_scope))
+        role.data_scope = scope
+        role.save()
+        save_role_departments(role, request.POST.getlist("departments"))
+        messages.success(request, "数据范围已更新")
+        return redirect("rbac:role_list")
+
+    checked = get_role_department_ids(role)
+    rows = _btr(Department.objects.all())
+    for row in rows:
+        row["checked"] = row["obj"].pk in checked
+
+    from .constants import DataScope
+
+    return render(
+        request,
+        "rbac/role_data_scope.html",
+        {"role": role, "rows": rows, "scopes": DataScope.choices, "custom": DataScope.CUSTOM},
     )

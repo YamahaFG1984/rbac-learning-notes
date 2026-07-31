@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}数据范围：{{ role.name }}{% endblock %}
+{% block page_title %}数据范围{% endblock %}
+{% block content %}
+<form method="post" class="max-w-2xl rounded-lg bg-white p-6 shadow">
+  {% csrf_token %}
+  <p class="mb-4 text-sm text-gray-500">角色：{{ role.name }}（{{ role.code }}）</p>
+
+  <label class="block text-sm font-medium text-gray-700">数据范围</label>
+  <select name="data_scope" id="scope-select"
+          class="mt-1 block w-full rounded-md border-0 px-2 py-1.5 text-sm ring-1 ring-inset ring-gray-300">
+    {% for v,label in scopes %}
+      <option value="{{ v }}" {% if role.data_scope == v %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+
+  <div id="dept-picker" class="mt-4 {% if role.data_scope != custom %}hidden{% endif %}">
+    <p class="mb-2 text-sm font-medium text-gray-700">
+      选择部门 <span class="font-normal text-gray-500">（勾选的部门**包含其所有下级**）</span>
+    </p>
+    <ul class="max-h-80 space-y-1 overflow-y-auto rounded border border-gray-200 p-3">
+      {% for row in rows %}
+      <li style="padding-left: {{ row.indent_px }}px">
+        <label class="inline-flex items-center gap-2 text-sm">
+          <input type="checkbox" name="departments" value="{{ row.obj.pk }}"
+                 {% if row.checked %}checked{% endif %}
+                 class="h-4 w-4 rounded border-gray-300 text-indigo-600">
+          <span>{{ row.obj.name }}</span>
+          <span class="font-mono text-xs text-gray-400">{{ row.obj.code }}</span>
+        </label>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+
+  <div class="mt-6 flex gap-2">
+    <button type="submit" class="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">保存</button>
+    <a href="{% url 'rbac:role_list' %}" class="rounded-md bg-white px-3 py-1.5 text-sm font-medium text-gray-700 ring-1 ring-gray-300 hover:bg-gray-50">取消</a>
+  </div>
+</form>
+
+<script>
+// 前端只做显隐；后端不信任它——save_role_departments() 会在
+// data_scope != CUSTOM 时忽略提交上来的部门 ID。
+(function () {
+  const sel = document.getElementById('scope-select');
+  const picker = document.getElementById('dept-picker');
+  const CUSTOM = '{{ custom }}';
+  sel.addEventListener('change', () => picker.classList.toggle('hidden', sel.value !== CUSTOM));
+})();
+</script>
+{% endblock %}
