@@ -1,10 +1,9 @@
 import { useEffect } from 'react'
 
-import { useQuery } from '@tanstack/react-query'
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router'
 
 import { setUnauthenticatedHandler } from '@/api/client'
-import { fetchProfile } from '@/auth/api'
+import { AuthBootstrap } from '@/auth/AuthBootstrap'
 import { useAuthStore } from '@/auth/store'
 import { RequireAuth } from '@/components/RequireAuth'
 import { AdminLayout } from '@/layouts/AdminLayout'
@@ -18,27 +17,6 @@ import Roles from '@/pages/system/Roles'
 import Users from '@/pages/system/Users'
 import TicketDetail from '@/pages/tickets/Detail'
 import TicketList from '@/pages/tickets/List'
-
-/**
- * 应用启动时问一次后端「我登录了吗」。
- * fe-v0.6.0 会把它换成正式的 useProfileQuery 并接进权限 store。
- */
-function useBootstrapAuth() {
-  const setProfile = useAuthStore((s) => s.setProfile)
-  const reset = useAuthStore((s) => s.reset)
-
-  const query = useQuery({
-    queryKey: ['profile'],
-    queryFn: fetchProfile,
-    retry: false,
-    staleTime: Infinity,
-  })
-
-  useEffect(() => {
-    if (query.data) setProfile(query.data)
-    else if (query.isError) reset()
-  }, [query.data, query.isError, setProfile, reset])
-}
 
 /** 把「会话过期怎么办」注入 axios 拦截器——避免 api 层直接依赖路由。 */
 function UnauthenticatedBridge() {
@@ -57,18 +35,24 @@ function UnauthenticatedBridge() {
 }
 
 /**
- * ⚠️ fe-v0.4.0：**静态路由表**，没有任何权限判断。
+ * ⚠️ fe-v0.6.0：路由表仍然是**静态**的，没有权限守卫。
+ *    fe-v0.7.0 会改为由 profile 的 menus 动态注册 + PermissionGate。
  *
- *    所有登录用户都能进所有页面——包括他没权限的（进去后接口会 403）。
- *    fe-v0.7.0 会改为由 profile 的 menus 动态注册 + PermissionGate 守卫。
+ * 层次很重要（见 AuthBootstrap 的注释）：
  *
- *    这个难看的中间态是刻意的，理由同 Sidebar.tsx 的注释。
+ *     AuthBootstrap        ← 触发 profile 请求，确定认证状态
+ *       └── Routes
+ *             ├── /login          （公开）
+ *             └── RequireAuth     ← 依赖认证状态
+ *                   └── AdminLayout
+ *
+ * AuthBootstrap 必须在 RequireAuth **外面**，否则死锁——
+ * 谁负责确定状态，就得在依赖这个状态的东西之上。
+ * fe-v0.7.0 的动态路由注册会进一步依赖这个层次。
  */
 function AppRoutes() {
-  useBootstrapAuth()
-
   return (
-    <>
+    <AuthBootstrap>
       <UnauthenticatedBridge />
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -92,7 +76,7 @@ function AppRoutes() {
           <Route path="*" element={<NotFound />} />
         </Route>
       </Routes>
-    </>
+    </AuthBootstrap>
   )
 }
 
