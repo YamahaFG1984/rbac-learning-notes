@@ -1,20 +1,26 @@
 import { useEffect } from 'react'
 
 import { useQuery } from '@tanstack/react-query'
-import { Button, Card, Descriptions, Space, Typography } from 'antd'
 import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router'
 
 import { setUnauthenticatedHandler } from '@/api/client'
 import { fetchProfile } from '@/auth/api'
 import { useAuthStore } from '@/auth/store'
-import { useLogout } from '@/auth/useAuth'
 import { RequireAuth } from '@/components/RequireAuth'
+import { AdminLayout } from '@/layouts/AdminLayout'
+import Forbidden from '@/pages/Forbidden'
 import Login from '@/pages/Login'
+import NotFound from '@/pages/NotFound'
+import AuditLogs from '@/pages/monitor/AuditLogs'
+import Departments from '@/pages/system/Departments'
+import Permissions from '@/pages/system/Permissions'
+import Roles from '@/pages/system/Roles'
+import Users from '@/pages/system/Users'
+import TicketDetail from '@/pages/tickets/Detail'
+import TicketList from '@/pages/tickets/List'
 
 /**
  * 应用启动时问一次后端「我登录了吗」。
- *
- * 前端不保存 token——它靠这一次请求判断认证状态（F-ADR-002/003）。
  * fe-v0.6.0 会把它换成正式的 useProfileQuery 并接进权限 store。
  */
 function useBootstrapAuth() {
@@ -50,50 +56,14 @@ function UnauthenticatedBridge() {
   return null
 }
 
-/** fe-v0.3.0 的临时首页。真正的后台布局在 fe-v0.4.0。 */
-function Home() {
-  const user = useAuthStore((s) => s.user)
-  const perms = useAuthStore((s) => s.perms)
-  const logout = useLogout()
-
-  return (
-    <div style={{ maxWidth: 720, margin: '64px auto', padding: 24 }}>
-      <Space
-        style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}
-      >
-        <Typography.Title level={3} style={{ margin: 0 }}>
-          已登录
-        </Typography.Title>
-        <Button onClick={() => logout.mutate()} loading={logout.isPending}>
-          退出登录
-        </Button>
-      </Space>
-
-      <Card title="当前会话">
-        <Descriptions column={1} size="small">
-          <Descriptions.Item label="用户">
-            {user?.realName || user?.username}
-          </Descriptions.Item>
-          <Descriptions.Item label="部门">
-            {user?.department?.name ?? '—'}
-          </Descriptions.Item>
-          <Descriptions.Item label="超管">
-            {user?.isSuperuser ? '是' : '否'}
-          </Descriptions.Item>
-          <Descriptions.Item label="权限码数">{perms.length}</Descriptions.Item>
-          <Descriptions.Item label="document.cookie">
-            <code style={{ fontSize: 12 }}>{document.cookie || '（空）'}</code>
-          </Descriptions.Item>
-        </Descriptions>
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
-          ⬆️ 上面这行是 F-ADR-002 的验收：看得到 csrftoken，
-          <strong>看不到 sessionid</strong>——真正的凭证是 httpOnly 的。
-        </Typography.Paragraph>
-      </Card>
-    </div>
-  )
-}
-
+/**
+ * ⚠️ fe-v0.4.0：**静态路由表**，没有任何权限判断。
+ *
+ *    所有登录用户都能进所有页面——包括他没权限的（进去后接口会 403）。
+ *    fe-v0.7.0 会改为由 profile 的 menus 动态注册 + PermissionGate 守卫。
+ *
+ *    这个难看的中间态是刻意的，理由同 Sidebar.tsx 的注释。
+ */
 function AppRoutes() {
   useBootstrapAuth()
 
@@ -106,11 +76,21 @@ function AppRoutes() {
           path="/"
           element={
             <RequireAuth>
-              <Home />
+              <AdminLayout />
             </RequireAuth>
           }
-        />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        >
+          <Route index element={<Navigate to="/tickets" replace />} />
+          <Route path="tickets" element={<TicketList />} />
+          <Route path="tickets/:id" element={<TicketDetail />} />
+          <Route path="system/depts" element={<Departments />} />
+          <Route path="system/users" element={<Users />} />
+          <Route path="system/roles" element={<Roles />} />
+          <Route path="system/perms" element={<Permissions />} />
+          <Route path="monitor/audit" element={<AuditLogs />} />
+          <Route path="403" element={<Forbidden />} />
+          <Route path="*" element={<NotFound />} />
+        </Route>
       </Routes>
     </>
   )
