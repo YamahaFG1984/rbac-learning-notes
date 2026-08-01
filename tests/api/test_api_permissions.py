@@ -1,13 +1,18 @@
 """API 层权限复用（v1.2.0）—— 对整个架构设计的总检验。"""
 
+import csv
+import io
 import subprocess
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APIClient
 
 from apps.common.demo import DEMO_PASSWORD, build_demo_world
 from apps.tickets.models import Ticket
+
+User = get_user_model()
 
 
 @pytest.fixture
@@ -275,3 +280,75 @@ class TestProfile:
 
     def test_requires_authentication(self):
         assert APIClient().get(reverse("api:profile")).status_code == 401
+
+
+# --------------------------------------------------------------------------- #
+# 列表筛选与导出（v1.3.0，SPA 的工单列表需要）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.django_db
+class TestListAndExport:
+    """两个前端共用一套筛选 + 一套导出，必须筛得完全一致。"""
+
+    @pytest.mark.parametrize(
+        "username,expected",
+        [("superadmin", 80), ("sysadmin", 80), ("cs_manager", 50), ("cs_staff", 5)],
+    )
+    def test_list_count_matches_scope_matrix(self, world, username, expected):
+        """count 必须与后端数据权限矩阵一致——前端只是把 results 渲染出来，
+        任何一层多做了事，这里的数字就对不上。"""
+        resp = api_as(username).get("/api/v1/tickets/")
+        assert resp.json()["count"] == expected
+
+    def test_filters_narrow_the_scoped_queryset(self, world):
+        """筛选作用在**已经过数据权限过滤**的结果上，不是反过来。"""
+        client = api_as("cs_manager")
+        total = client.get("/api/v1/tickets/").json()["count"]
+        filtered = client.get("/api/v1/tickets/?status=open").json()["count"]
+        assert 0 < filtered <= total
+
+    def test_filter_cannot_widen_scope(self, world):
+        """⚠️ 关键：任何筛选参数都不能让用户看到范围外的数据。
+        筛选是收窄，永远不可能放宽。"""
+        client = api_as("cs_staff")
+        for qs in ["", "?status=open", "?priority=1", "?kw=", "?kw=单"]:
+            assert client.get(f"/api/v1/tickets/{qs}").json()["count"] <= 5
+
+    def test_export_row_count_equals_list_count(self, world):
+        """🎯 导出是最容易被忽略的越权入口：它是后加的功能，
+        代码路径和列表页不同。API 版新增后这个风险翻倍了。"""
+        client = api_as("cs_manager")
+        list_count = client.get("/api/v1/tickets/").json()["count"]
+
+        resp = client.get("/api/v1/tickets/export/")
+        assert resp.status_code == 200
+        rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
+        assert len([r for r in rows[1:] if r]) == list_count == 50
+
+    def test_export_respects_filters(self, world):
+        client = api_as("cs_manager")
+        list_count = client.get("/api/v1/tickets/?status=open").json()["count"]
+
+        resp = client.get("/api/v1/tickets/export/?status=open")
+        rows = list(csv.reader(io.StringIO(resp.content.decode("utf-8-sig"))))
+        assert len([r for r in rows[1:] if r]) == list_count
+
+    def test_export_requires_its_own_perm(self, world):
+        """cs_staff 有 view 没有 export —— 列表能看，导出不行。"""
+        client = api_as("cs_staff")
+        assert client.get("/api/v1/tickets/").status_code == 200
+        assert client.get("/api/v1/tickets/export/").status_code == 403
+
+    def test_two_frontends_export_identically(self, world, client):
+        """模板版和 API 版的导出必须**逐字节相同**。
+
+        这条测试守的是 export.py / filters.py 这次抽取的意义：
+        哪天有人只改了其中一个入口，这里立刻红。
+        """
+        user = User.objects.get(username="cs_manager")
+        client.force_login(user)
+        web = client.get(reverse("tickets:export")).content
+
+        api = api_as("cs_manager").get("/api/v1/tickets/export/").content
+        assert web == api

@@ -6,10 +6,11 @@ test.describe('按钮级权限', () => {
   test('cs_manager 看得到删除 / 派单 / 导出', async ({ page }) => {
     await login(page, 'cs_manager')
     await page.goto('/tickets')
-    for (const name of ['派单', '导出']) {
-      await expect(page.getByRole('button', { name })).toBeVisible()
-    }
-    await expect(page.getByRole('button', { name: '删除' })).toBeVisible()
+    // 导出在工具栏；派单和删除是**针对某一条工单**的操作，在行内
+    await expect(page.getByRole('button', { name: '导出' })).toBeVisible()
+    const firstRow = page.locator('.ant-table-tbody tr.ant-table-row').first()
+    await expect(firstRow.getByRole('button', { name: '派单' })).toBeVisible()
+    await expect(firstRow.getByRole('button', { name: '删除' })).toBeVisible()
   })
 
   test('cs_staff 看不到删除 / 派单 / 导出', async ({ page }) => {
@@ -25,9 +26,11 @@ test.describe('按钮级权限', () => {
   test('superadmin 的 * 通配让全部按钮可见', async ({ page }) => {
     await login(page, 'superadmin')
     await page.goto('/tickets')
-    for (const name of ['新建工单', '派单', '导出']) {
+    for (const name of ['新建工单', '导出']) {
       await expect(page.getByRole('button', { name })).toBeVisible()
     }
+    const firstRow = page.locator('.ant-table-tbody tr.ant-table-row').first()
+    await expect(firstRow.getByRole('button', { name: '派单' })).toBeVisible()
   })
 })
 
