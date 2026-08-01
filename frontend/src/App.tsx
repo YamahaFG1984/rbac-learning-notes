@@ -1,54 +1,125 @@
+import { useEffect } from 'react'
+
 import { useQuery } from '@tanstack/react-query'
-import { Alert, Card, Descriptions, Space, Spin, Typography } from 'antd'
+import { Button, Card, Descriptions, Space, Typography } from 'antd'
+import { BrowserRouter, Navigate, Route, Routes, useNavigate } from 'react-router'
 
-import { client } from '@/api/client'
-
-interface HealthPayload {
-  detail: string
-}
+import { setUnauthenticatedHandler } from '@/api/client'
+import { fetchProfile } from '@/auth/api'
+import { useAuthStore } from '@/auth/store'
+import { useLogout } from '@/auth/useAuth'
+import { RequireAuth } from '@/components/RequireAuth'
+import Login from '@/pages/Login'
 
 /**
- * fe-v0.1.0：只做一件事——验证同域代理确实打通了。
+ * 应用启动时问一次后端「我登录了吗」。
  *
- * 真正的路由与布局在 fe-v0.3.0 / fe-v0.4.0。
+ * 前端不保存 token——它靠这一次请求判断认证状态（F-ADR-002/003）。
+ * fe-v0.6.0 会把它换成正式的 useProfileQuery 并接进权限 store。
  */
-export default function App() {
-  const { data, error, isPending } = useQuery({
-    queryKey: ['health'],
-    queryFn: async () => (await client.get<HealthPayload>('/health/')).data,
+function useBootstrapAuth() {
+  const setProfile = useAuthStore((s) => s.setProfile)
+  const reset = useAuthStore((s) => s.reset)
+
+  const query = useQuery({
+    queryKey: ['profile'],
+    queryFn: fetchProfile,
     retry: false,
+    staleTime: Infinity,
   })
+
+  useEffect(() => {
+    if (query.data) setProfile(query.data)
+    else if (query.isError) reset()
+  }, [query.data, query.isError, setProfile, reset])
+}
+
+/** 把「会话过期怎么办」注入 axios 拦截器——避免 api 层直接依赖路由。 */
+function UnauthenticatedBridge() {
+  const navigate = useNavigate()
+  const reset = useAuthStore((s) => s.reset)
+
+  useEffect(() => {
+    setUnauthenticatedHandler(() => {
+      reset()
+      const here = window.location.pathname + window.location.search
+      navigate(`/login?redirect=${encodeURIComponent(here)}`, { replace: true })
+    })
+  }, [navigate, reset])
+
+  return null
+}
+
+/** fe-v0.3.0 的临时首页。真正的后台布局在 fe-v0.4.0。 */
+function Home() {
+  const user = useAuthStore((s) => s.user)
+  const perms = useAuthStore((s) => s.perms)
+  const logout = useLogout()
 
   return (
     <div style={{ maxWidth: 720, margin: '64px auto', padding: 24 }}>
-      <Typography.Title level={3}>RBAC 教学系统 · React 前端</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        fe-v0.1.0：前端骨架与同域代理。两套前端并存——
-        <a href="/django/accounts/login/">Django 模板版在这里</a>。
-      </Typography.Paragraph>
+      <Space
+        style={{ width: '100%', justifyContent: 'space-between', marginBottom: 16 }}
+      >
+        <Typography.Title level={3} style={{ margin: 0 }}>
+          已登录
+        </Typography.Title>
+        <Button onClick={() => logout.mutate()} loading={logout.isPending}>
+          退出登录
+        </Button>
+      </Space>
 
-      <Card title="后端连通性">
-        {isPending ? (
-          <Space>
-            <Spin />
-            正在请求 /api/v1/health/
-          </Space>
-        ) : error ? (
-          <Alert
-            type="error"
-            showIcon
-            message="连不上后端"
-            description="确认 Django 已在 :8000 运行，且 vite.config.ts 的 proxy 配置正确。"
-          />
-        ) : (
-          <Descriptions column={1} size="small">
-            <Descriptions.Item label="状态">{data?.detail}</Descriptions.Item>
-            <Descriptions.Item label="请求地址">
-              /api/v1/health/（同域，由 Vite 转发到 :8000）
-            </Descriptions.Item>
-          </Descriptions>
-        )}
+      <Card title="当前会话">
+        <Descriptions column={1} size="small">
+          <Descriptions.Item label="用户">
+            {user?.realName || user?.username}
+          </Descriptions.Item>
+          <Descriptions.Item label="部门">
+            {user?.department?.name ?? '—'}
+          </Descriptions.Item>
+          <Descriptions.Item label="超管">
+            {user?.isSuperuser ? '是' : '否'}
+          </Descriptions.Item>
+          <Descriptions.Item label="权限码数">{perms.length}</Descriptions.Item>
+          <Descriptions.Item label="document.cookie">
+            <code style={{ fontSize: 12 }}>{document.cookie || '（空）'}</code>
+          </Descriptions.Item>
+        </Descriptions>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
+          ⬆️ 上面这行是 F-ADR-002 的验收：看得到 csrftoken，
+          <strong>看不到 sessionid</strong>——真正的凭证是 httpOnly 的。
+        </Typography.Paragraph>
       </Card>
     </div>
+  )
+}
+
+function AppRoutes() {
+  useBootstrapAuth()
+
+  return (
+    <>
+      <UnauthenticatedBridge />
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/"
+          element={
+            <RequireAuth>
+              <Home />
+            </RequireAuth>
+          }
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </>
+  )
+}
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AppRoutes />
+    </BrowserRouter>
   )
 }
