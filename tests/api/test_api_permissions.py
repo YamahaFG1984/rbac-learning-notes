@@ -227,7 +227,7 @@ class TestProfile:
 
         assert payload["user"]["username"] == "cs_manager"
         assert payload["user"]["department"]["name"] == "客服部"
-        assert payload["user"]["is_superuser"] is False
+        assert payload["user"]["isSuperuser"] is False
         assert "ticket:ticket:view" in payload["perms"]
         assert isinstance(payload["menus"], list)
 
@@ -236,7 +236,7 @@ class TestProfile:
         这一点必须和前端约定好。"""
         payload = api_as("superadmin").get(reverse("api:profile")).json()
         assert payload["perms"] == ["*"]
-        assert payload["user"]["is_superuser"] is True
+        assert payload["user"]["isSuperuser"] is True
 
     def test_inherited_perms_included(self, world):
         """客服主管继承客服专员——profile 返回的是展开后的有效权限。"""

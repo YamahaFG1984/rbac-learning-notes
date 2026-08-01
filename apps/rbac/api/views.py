@@ -42,6 +42,32 @@ def health(request):
     return Response({"detail": "ok"})
 
 
+def build_profile_payload(user):
+    """当前用户的信息 + 权限码 + 菜单树。
+
+    ⚠️ get_user_perm_codes / get_user_menu_tree 就是模板层用的**同一个函数**
+       ——不是「API 版本」，是同一个（ADR-013）。
+    """
+    codes = get_user_perm_codes(user)
+    return {
+        "user": {
+            "id": user.pk,
+            "username": user.username,
+            "realName": user.real_name,
+            "department": (
+                {"id": user.department_id, "name": user.department.name}
+                if user.department_id
+                else None
+            ),
+            "isSuperuser": user.is_superuser,
+        },
+        # 超管的 ALL_PERMS 哨兵不可序列化，用 ["*"] 表示「全部放行」，
+        # 前端据此跳过逐码判断。这一点必须和前端约定好。
+        "perms": ["*"] if user.is_superuser else sorted(codes),
+        "menus": get_user_menu_tree(user),
+    }
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def profile(request):
@@ -55,24 +81,4 @@ def profile(request):
        get_user_menu_tree 在 v0.11.0 就被要求返回 list[dict] 而不是
        model 实例，伏笔在这里：直接就能 JSON 序列化。
     """
-    user = request.user
-    codes = get_user_perm_codes(user)
-    return Response(
-        {
-            "user": {
-                "id": user.pk,
-                "username": user.username,
-                "real_name": user.real_name,
-                "department": (
-                    {"id": user.department_id, "name": user.department.name}
-                    if user.department_id
-                    else None
-                ),
-                "is_superuser": user.is_superuser,
-            },
-            # 超管的 ALL_PERMS 哨兵不可序列化，用 ["*"] 表示「全部放行」，
-            # 前端据此跳过逐码判断。这一点必须和前端约定好。
-            "perms": ["*"] if user.is_superuser else sorted(codes),
-            "menus": get_user_menu_tree(user),
-        }
-    )
+    return Response(build_profile_payload(request.user))

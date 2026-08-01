@@ -9,6 +9,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from apps.accounts.api.views import DepartmentViewSet, UserViewSet
+from apps.rbac.api.auth_views import csrf, login_view, logout_view
 from apps.rbac.api.views import PermissionViewSet, RoleViewSet, health, profile
 from apps.tickets.api.views import TicketViewSet
 
@@ -26,5 +27,8 @@ urlpatterns = [
     path("auth/token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("auth/token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
     path("auth/profile/", profile, name="profile"),
+    path("auth/csrf/", csrf, name="csrf"),
+    path("auth/login/", login_view, name="login"),
+    path("auth/logout/", logout_view, name="logout"),
     *router.urls,
 ]
