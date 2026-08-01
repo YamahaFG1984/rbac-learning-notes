@@ -21,7 +21,17 @@ export const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider locale={zhCN}>
+    {/*
+      ⚠️ autoInsertSpace 默认为 true：AntD 会给「登录」这类两个汉字的按钮
+         自动插入空格，渲染成「登 录」。
+
+         后果是任何按文本查找按钮的代码都失效——测试里
+         getByRole('button', { name: '登录' }) 找不到元素，
+         而报错只说「找不到」，完全指不到真正原因。
+
+         关掉它，让 DOM 里的文本和源码里写的一致。
+    */}
+    <ConfigProvider locale={zhCN} button={{ autoInsertSpace: false }}>
       <AntdApp>
         <QueryClientProvider client={queryClient}>
           <App />

@@ -20,6 +20,7 @@ export interface AuthState {
   user: User | null
   perms: string[]
   menus: MenuNode[]
+  knownRoutes: string[]
   status: 'unknown' | 'authenticated' | 'anonymous'
 
   setProfile: (profile: Profile) => void
@@ -30,6 +31,7 @@ const EMPTY = {
   user: null,
   perms: [] as string[],
   menus: [] as MenuNode[],
+  knownRoutes: [] as string[],
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -41,6 +43,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       user: profile.user,
       perms: profile.perms,
       menus: profile.menus,
+      knownRoutes: profile.knownRoutes,
       status: 'authenticated',
     }),
 

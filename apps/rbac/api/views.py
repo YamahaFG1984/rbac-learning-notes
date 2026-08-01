@@ -61,6 +61,10 @@ def _enrich_menus_for_spa(nodes, extra):
         meta = extra.get(node["id"], {})
         node["routePath"] = meta.get("route_path") or None
         node["component"] = meta.get("component") or None
+        # 权限码：前端路由守卫做兜底判断时要用。
+        # 内核的菜单树刻意不含它（它只负责「过滤出你能看的」，
+        # 不负责告诉调用方「凭哪个码过滤的」）——同样在这一层补。
+        node["permCode"] = meta.get("code") or None
         _enrich_menus_for_spa(node["children"], extra)
     return nodes
 
@@ -87,12 +91,30 @@ def build_profile_payload(user):
         # 超管的 ALL_PERMS 哨兵不可序列化，用 ["*"] 表示「全部放行」，
         # 前端据此跳过逐码判断。这一点必须和前端约定好。
         "perms": ["*"] if user.is_superuser else sorted(codes),
+        # ⚠️ 系统里**全部**菜单路径（不管当前用户有没有权限）。
+        #
+        # 前端用它区分「路径存在但你没权限」（→ 403）和「路径根本不存在」（→ 404）。
+        # 只给用户有权限的那份路径的话，两者都匹配不到路由，
+        # 用户会看到 404 然后去问 IT「链接坏了」。
+        #
+        # 这确实泄露了「系统有哪些页面」——严格说是信息泄露。但：
+        #   · 页面路径不是秘密，攻击者读前端 bundle 也能拿到
+        #   · 换来的是明确的用户提示
+        # 接受，但要知道自己在交换什么。
+        #
+        # 注意与后端 ADR-009 对**数据**的做法不同（那里统一 404）：
+        # 「页面存在性」和「数据存在性」的敏感度不是一个量级。
+        "knownRoutes": sorted(
+            Permission.objects.filter(is_active=True, is_deprecated=False)
+            .exclude(route_path="")
+            .values_list("route_path", flat=True)
+        ),
         "menus": _enrich_menus_for_spa(
             get_user_menu_tree(user),  # ← 内核原样调用，一行不改
             {
                 row["id"]: row
                 for row in Permission.objects.filter(is_active=True).values(
-                    "id", "route_path", "component"
+                    "id", "route_path", "component", "code"
                 )
             },
         ),
