@@ -33,7 +33,9 @@ PERMISSIONS = [
                 "name": "部门管理",
                 "type": "menu",
                 "url_name": "accounts:department_list",
-                "icon": "sitemap",
+                "route_path": "/system/depts",
+                "component": "system/Departments",
+                "icon": "Sitemap",
                 "order": 10,
                 "children": [
                     {"code": DeptPerm.CREATE, "name": "新建部门", "type": "button", "order": 10},
@@ -46,7 +48,9 @@ PERMISSIONS = [
                 "name": "用户管理",
                 "type": "menu",
                 "url_name": "accounts:user_list",
-                "icon": "users",
+                "route_path": "/system/users",
+                "component": "system/Users",
+                "icon": "Team",
                 "order": 20,
                 "children": [
                     {"code": UserPerm.CREATE, "name": "新建用户", "type": "button", "order": 10},

@@ -45,6 +45,11 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--dry-run", action="store_true", help="只报告，不写库")
         parser.add_argument(
+            "--check-frontend",
+            action="store_true",
+            help="校验菜单的 component 指向的前端文件是否存在",
+        )
+        parser.add_argument(
             "--check-templates",
             action="store_true",
             help="扫描模板中的权限码字面量，报告数据库里不存在的",
@@ -81,6 +86,11 @@ class Command(BaseCommand):
             from apps.rbac.cache import bump_version
 
             bump_version()
+
+        if options["check_frontend"]:
+            problems = self._check_frontend()
+            if problems and not self.dry_run:
+                raise SystemExit(1)
 
         if options["check_templates"]:
             problems = self._check_templates()
@@ -128,6 +138,32 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS("模板中的权限码全部有效"))
         return problems
 
+    def _check_frontend(self):
+        """校验菜单的 component 指向的前端文件确实存在。
+
+        ⚠️ 它只能发现「写成了 tickets/Lst」这类拼错，
+           发现不了「写成了另一个真实存在但不对的组件」。
+           部分解决好过不解决——同 v1.0.0 的 --check-templates。
+        """
+        from pathlib import Path
+
+        from django.conf import settings
+
+        pages = Path(settings.BASE_DIR, "frontend/src/pages")
+        problems = []
+        for perm in Permission.objects.exclude(component="").order_by("code"):
+            target = pages / f"{perm.component}.tsx"
+            if not target.exists():
+                problems.append(f"{perm.code or perm.name}  ->  {perm.component}.tsx")
+
+        if problems:
+            self.stdout.write(self.style.ERROR(f"发现 {len(problems)} 个无效的前端组件："))
+            for item in problems:
+                self.stdout.write(f"  {item}")
+        else:
+            self.stdout.write(self.style.SUCCESS("菜单的前端组件全部存在"))
+        return problems
+
     def _validate(self, nodes, _path="根"):
         """让机器守规范：格式不对直接报错，不要等到某天鉴权失败再 grep 半天。"""
         for node in nodes:
@@ -156,6 +192,8 @@ class Command(BaseCommand):
             "parent": parent,
             "order_num": node.get("order", 0),
             "url_name": node.get("url_name", ""),
+            "route_path": node.get("route_path", ""),
+            "component": node.get("component", ""),
             "icon": node.get("icon", ""),
             "is_visible": node.get("visible", True),
             "is_active": True,

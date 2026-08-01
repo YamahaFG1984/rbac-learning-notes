@@ -42,6 +42,29 @@ def health(request):
     return Response({"detail": "ok"})
 
 
+def _enrich_menus_for_spa(nodes, extra):
+    """给菜单树补上前端路由字段。
+
+    ⚠️ 刻意放在 API 层而不是 services.get_user_menu_tree() 里。
+
+       route_path / component 是**这一种表现层**特有的东西，模板版完全用不上。
+       把它们塞进内核，就是让内核认识 React——那正是 ADR-013 要防的。
+
+       更省事的做法当然是直接改 get_user_menu_tree() 多输出两个字段，
+       但那等于承认「内核可以为某个前端多输出字段」：
+       今天加 React 的两个，明天加小程序的三个，内核就慢慢变成了
+       所有前端的公共字段袋。
+
+       约束的价值在于它被坚持时才存在。破例一次，后面每次都能找到破例的理由。
+    """
+    for node in nodes:
+        meta = extra.get(node["id"], {})
+        node["routePath"] = meta.get("route_path") or None
+        node["component"] = meta.get("component") or None
+        _enrich_menus_for_spa(node["children"], extra)
+    return nodes
+
+
 def build_profile_payload(user):
     """当前用户的信息 + 权限码 + 菜单树。
 
@@ -64,7 +87,15 @@ def build_profile_payload(user):
         # 超管的 ALL_PERMS 哨兵不可序列化，用 ["*"] 表示「全部放行」，
         # 前端据此跳过逐码判断。这一点必须和前端约定好。
         "perms": ["*"] if user.is_superuser else sorted(codes),
-        "menus": get_user_menu_tree(user),
+        "menus": _enrich_menus_for_spa(
+            get_user_menu_tree(user),  # ← 内核原样调用，一行不改
+            {
+                row["id"]: row
+                for row in Permission.objects.filter(is_active=True).values(
+                    "id", "route_path", "component"
+                )
+            },
+        ),
     }
 
 

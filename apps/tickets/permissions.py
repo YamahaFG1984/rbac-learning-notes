@@ -25,7 +25,9 @@ PERMISSIONS = [
                 "name": "工单列表",
                 "type": "menu",
                 "url_name": "tickets:list",
-                "icon": "list",
+                "route_path": "/tickets",
+                "component": "tickets/List",
+                "icon": "FileText",
                 "order": 10,
                 "children": [
                     {"code": TicketPerm.CREATE, "name": "新建工单", "type": "button", "order": 10},

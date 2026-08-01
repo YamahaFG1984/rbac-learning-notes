@@ -137,11 +137,40 @@ class TestApiWebConsistency:
 
         assert payload["perms"] == kernel_codes
 
-    def test_menus_identical_to_sidebar(self, world):
+    def test_menus_structurally_identical_to_sidebar(self, world):
+        """API 的菜单树与模板层来自**同一个** get_user_menu_tree()。
+
+        ⚠️ 不能断言字典全等：fe-v0.5.0 起 API 层会额外补上
+           routePath / component 两个 SPA 专用字段（F-ADR-008）。
+           那两个字段刻意**不进内核**——模板版用不上它们。
+
+        所以这里断言的是「结构一致」：同样的节点、同样的层级、同样的顺序。
+        这才是这条测试真正要守的东西。
+        """
         from apps.rbac.services import get_user_menu_tree
 
+        def shape(nodes):
+            return [
+                {"id": n["id"], "name": n["name"], "children": shape(n["children"])}
+                for n in nodes
+            ]
+
         payload = api_as("cs_manager").get(reverse("api:profile")).json()
-        assert payload["menus"] == get_user_menu_tree(world["cs_manager"])
+        assert shape(payload["menus"]) == shape(get_user_menu_tree(world["cs_manager"]))
+
+    def test_api_menus_carry_spa_route_fields(self, world):
+        """SPA 需要的前端路由字段由 API 层补上，不在内核里（F-ADR-008）。"""
+        payload = api_as("cs_manager").get(reverse("api:profile")).json()
+        leaf = payload["menus"][0]["children"][0]
+        assert leaf["routePath"] == "/tickets"
+        assert leaf["component"] == "tickets/List"
+
+        # 内核的返回值里**没有**这两个字段
+        from apps.rbac.services import get_user_menu_tree
+
+        kernel_leaf = get_user_menu_tree(world["cs_manager"])[0]["children"][0]
+        assert "routePath" not in kernel_leaf
+        assert "component" not in kernel_leaf
 
 
 # --------------------------------------------------------------------------- #
