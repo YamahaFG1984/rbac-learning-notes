@@ -1,6 +1,6 @@
 from rest_framework import viewsets
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
 from apps.rbac.models import Permission, Role
@@ -24,11 +24,112 @@ class RoleViewSet(viewsets.ModelViewSet):
 
 
 class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
-    """权限点只读——它由代码声明 + sync_permissions 同步，不允许 API 改（ADR-004）。"""
+    """权限点只读——它由代码声明 + sync_permissions 同步，不允许 API 改（ADR-004）。
+
+    ⚠️ 同 DepartmentViewSet：不分页。权限点也是树。
+
+       这个坑我在 fe-v0.12.0 真的踩了：前端传 ?page_size=500，
+       但 DRF 没配 page_size_query_param，参数被**静默忽略**，
+       页面只显示了 26 个权限点里的 20 个——不报错、不警告。
+
+       「传了一个不被识别的参数」是最难发现的一类错误：
+       它长得像生效了。
+    """
 
     serializer_class = PermissionSerializer
     queryset = Permission.objects.all()
+    pagination_class = None
     perm_map = {"list": PermPerm.VIEW, "retrieve": PermPerm.VIEW}
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def health(request):
+    """连通性探针。
+
+    刻意不需要认证——前端用它验证同域代理是否打通（fe-v0.1.0）。
+    不返回任何业务信息。
+    """
+    return Response({"detail": "ok"})
+
+
+def _enrich_menus_for_spa(nodes, extra):
+    """给菜单树补上前端路由字段。
+
+    ⚠️ 刻意放在 API 层而不是 services.get_user_menu_tree() 里。
+
+       route_path / component 是**这一种表现层**特有的东西，模板版完全用不上。
+       把它们塞进内核，就是让内核认识 React——那正是 ADR-013 要防的。
+
+       更省事的做法当然是直接改 get_user_menu_tree() 多输出两个字段，
+       但那等于承认「内核可以为某个前端多输出字段」：
+       今天加 React 的两个，明天加小程序的三个，内核就慢慢变成了
+       所有前端的公共字段袋。
+
+       约束的价值在于它被坚持时才存在。破例一次，后面每次都能找到破例的理由。
+    """
+    for node in nodes:
+        meta = extra.get(node["id"], {})
+        node["routePath"] = meta.get("route_path") or None
+        node["component"] = meta.get("component") or None
+        # 权限码：前端路由守卫做兜底判断时要用。
+        # 内核的菜单树刻意不含它（它只负责「过滤出你能看的」，
+        # 不负责告诉调用方「凭哪个码过滤的」）——同样在这一层补。
+        node["permCode"] = meta.get("code") or None
+        _enrich_menus_for_spa(node["children"], extra)
+    return nodes
+
+
+def build_profile_payload(user):
+    """当前用户的信息 + 权限码 + 菜单树。
+
+    ⚠️ get_user_perm_codes / get_user_menu_tree 就是模板层用的**同一个函数**
+       ——不是「API 版本」，是同一个（ADR-013）。
+    """
+    codes = get_user_perm_codes(user)
+    return {
+        "user": {
+            "id": user.pk,
+            "username": user.username,
+            "realName": user.real_name,
+            "department": (
+                {"id": user.department_id, "name": user.department.name}
+                if user.department_id
+                else None
+            ),
+            "isSuperuser": user.is_superuser,
+        },
+        # 超管的 ALL_PERMS 哨兵不可序列化，用 ["*"] 表示「全部放行」，
+        # 前端据此跳过逐码判断。这一点必须和前端约定好。
+        "perms": ["*"] if user.is_superuser else sorted(codes),
+        # ⚠️ 系统里**全部**菜单路径（不管当前用户有没有权限）。
+        #
+        # 前端用它区分「路径存在但你没权限」（→ 403）和「路径根本不存在」（→ 404）。
+        # 只给用户有权限的那份路径的话，两者都匹配不到路由，
+        # 用户会看到 404 然后去问 IT「链接坏了」。
+        #
+        # 这确实泄露了「系统有哪些页面」——严格说是信息泄露。但：
+        #   · 页面路径不是秘密，攻击者读前端 bundle 也能拿到
+        #   · 换来的是明确的用户提示
+        # 接受，但要知道自己在交换什么。
+        #
+        # 注意与后端 ADR-009 对**数据**的做法不同（那里统一 404）：
+        # 「页面存在性」和「数据存在性」的敏感度不是一个量级。
+        "knownRoutes": sorted(
+            Permission.objects.filter(is_active=True, is_deprecated=False)
+            .exclude(route_path="")
+            .values_list("route_path", flat=True)
+        ),
+        "menus": _enrich_menus_for_spa(
+            get_user_menu_tree(user),  # ← 内核原样调用，一行不改
+            {
+                row["id"]: row
+                for row in Permission.objects.filter(is_active=True).values(
+                    "id", "route_path", "component", "code"
+                )
+            },
+        ),
+    }
 
 
 @api_view(["GET"])
@@ -44,24 +145,4 @@ def profile(request):
        get_user_menu_tree 在 v0.11.0 就被要求返回 list[dict] 而不是
        model 实例，伏笔在这里：直接就能 JSON 序列化。
     """
-    user = request.user
-    codes = get_user_perm_codes(user)
-    return Response(
-        {
-            "user": {
-                "id": user.pk,
-                "username": user.username,
-                "real_name": user.real_name,
-                "department": (
-                    {"id": user.department_id, "name": user.department.name}
-                    if user.department_id
-                    else None
-                ),
-                "is_superuser": user.is_superuser,
-            },
-            # 超管的 ALL_PERMS 哨兵不可序列化，用 ["*"] 表示「全部放行」，
-            # 前端据此跳过逐码判断。这一点必须和前端约定好。
-            "perms": ["*"] if user.is_superuser else sorted(codes),
-            "menus": get_user_menu_tree(user),
-        }
-    )
+    return Response(build_profile_payload(request.user))

@@ -15,3 +15,16 @@ from .dev import *  # noqa: F401,F403
 # test_password_is_hashed 单独守着（它断言 pbkdf2_sha256 前缀，
 # 因此该用例仍需在 dev 配置下才有意义，见其内部说明）。
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+# ⚠️ 测试用 LocMemCache，不用 dev 的文件缓存。
+#
+# 文件缓存是跨进程共享的 —— 那正是开发环境需要的，却是测试**最不需要**的：
+# 测试之间会通过磁盘上的缓存文件互相污染，而且并行跑时互相踩。
+#
+# 「共享」在一个场景是修复，在另一个场景是缺陷。
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "rbac-test",
+    }
+}

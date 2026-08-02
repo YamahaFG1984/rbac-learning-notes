@@ -277,3 +277,33 @@ class TestAuditList:
 
         resp = su.get(reverse("audit:log_list"), {"kw": "cs_staff"})
         assert resp.context["page"].paginator.count == 2
+
+
+# --------------------------------------------------------------------------- #
+# seed_demo --flush（v1.3.0 补的一个真实 bug）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.django_db
+def test_seed_demo_flush_survives_protected_self_fk():
+    """🔴 Role.inherits_from 是自引用 PROTECT，批量删除会抛 ProtectedError。
+
+    v1.0.0 记得给部门树做「从叶子往根删」，却漏了角色继承树——
+    同一个形状，只处理了一处。表现是 `seed_demo --flush` 直接崩，
+    而且**只在第二次运行时才会崩**（第一次库是空的）。
+
+    教训：PROTECT 是一条只在删除路径上才冒出来的约束，
+    而删除路径通常是最少被走到的那条。
+    """
+    from django.core.management import call_command
+
+    from apps.rbac.models import Role
+
+    call_command("seed_demo", noinput=True, verbosity=0)
+    assert Role.objects.filter(inherits_from__isnull=False).exists(), (
+        "演示数据里必须有继承关系，否则这条测试什么都没测到"
+    )
+
+    # 第二次带 --flush：先清空再重建，这一步在修复前会抛 ProtectedError
+    call_command("seed_demo", flush=True, noinput=True, verbosity=0)
+    assert Role.objects.count() == 4

@@ -7,6 +7,7 @@
 import pytest
 from django.contrib.auth.models import AnonymousUser
 from django.core.management import call_command
+from django.urls import reverse
 
 from apps.accounts.models import Department
 from apps.rbac.constants import DataScope
@@ -287,7 +288,7 @@ class TestViewIntegration:
         UserRole.objects.create(user=staff, role=role)
         client.force_login(staff)
 
-        resp = client.get("/tickets/")
+        resp = client.get(reverse("tickets:list"))
 
         # v0.13.0 时这里是 80——数据权限现在生效了
         assert resp.context["page"].paginator.count == 5

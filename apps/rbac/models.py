@@ -35,8 +35,20 @@ class Permission(TreeModel):
     )
     order_num = models.SmallIntegerField("排序", default=0)
 
-    # --- 以下为展示层关注点（ADR-005）。若将来要拆表，边界在这里 ---
-    url_name = models.CharField("URL name", max_length=128, blank=True)
+    # --- 以下为展示层关注点（ADR-005 / F-ADR-008）。若将来要拆表，边界在这里 ---
+    #
+    # ⚠️ 这是第二次为「管理便利性」向「领域纯洁性」让步了：
+    #    ADR-005 决定菜单与权限点合表时接受了第一次污染，
+    #    F-ADR-008 为 React 前端又加了两个字段。
+    #    第三个前端（比如小程序）出现时，就是该拆表的时机。
+    url_name = models.CharField("Django URL name", max_length=128, blank=True)
+    # SPA 用：前端路由与组件路径。component 存的是**路径**不是组件名——
+    # 前端可以用 import.meta.glob 直接映射，零维护。
+    route_path = models.CharField("前端路由", max_length=128, blank=True)
+    component = models.CharField(
+        "前端组件", max_length=128, blank=True,
+        help_text="相对 frontend/src/pages/，不带扩展名，如 tickets/List",
+    )
     icon = models.CharField("图标", max_length=64, blank=True)
     is_visible = models.BooleanField("菜单可见", default=True)
     # --- 展示层字段结束 ---

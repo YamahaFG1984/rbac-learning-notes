@@ -33,7 +33,23 @@ class Command(BaseCommand):
             UserRole.objects.all().delete()
             RolePermission.objects.all().delete()
             RoleDepartment.objects.all().delete()
-            Role.objects.all().delete()
+            # ⚠️ Role.inherits_from 也是**自引用 PROTECT**，和部门树同一个形状。
+            #
+            #    v1.0.0 记得给部门做「从叶子往根删」（见下面几行），却漏了角色，
+            #    于是 `seed_demo --flush` 直接抛 ProtectedError：
+            #      Cannot delete some instances of model 'Role' because they are
+            #      referenced through protected foreign keys: 'Role.inherits_from'
+            #
+            #    教训不是「这里忘了」，而是：**PROTECT 是一条会在删除路径上
+            #    冒出来的约束，而删除路径通常是最少被走到的那条**。
+            #    凡是自引用 PROTECT 外键，删除就必须自底向上——不止一处。
+            while Role.objects.exists():
+                leaves = Role.objects.filter(inheritors__isnull=True)
+                if not leaves.exists():
+                    # 走到这里说明存在环。模型层禁止了环（v0.12.0 的环检测），
+                    # 真出现就是数据被手工改过——直接报错，不要静默死循环。
+                    raise RuntimeError("角色继承关系中存在环，无法安全删除")
+                leaves.delete()
             # ⚠️ 审计日志刻意**不清**——它只写不改不删（FR-9.4）。
             #    连 seed 脚本都不给例外，否则那条不变式就名存实亡了。
             User.objects.filter(is_superuser=False).delete()

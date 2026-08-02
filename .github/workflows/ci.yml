@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - name: Django 自检（含 rbac.W001 / W002）
+        run: python manage.py check
+      - run: pytest -q
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run typecheck
+        working-directory: frontend
+      - run: npm run test:coverage
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+
+  # 🔴 前后端一致性。这个 job 单独拆出来，是因为它守的东西
+  #    和上面两个都不一样：它守的是**两边不会各自漂移**。
+  consistency:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+
+      # 权限码常量：后端加了权限点但忘了重新生成 → 前端 TS 里没有那个常量，
+      # 写 <Can perm={PERM.NEW_ONE}> 会编译报错，但报错信息指向前端，
+      # 排查的人要绕很久才想到是后端改了没同步。
+      - name: 权限常量与后端一致
+        run: python manage.py export_perm_constants --check
+
+      # 🔴 服务端校验清单：它是「每个 <Can> 都有对应后端校验」这条
+      #    结构性测试的依据。**它过期的话，那条测试仍然会绿** ——
+      #    用一份陈旧的清单对账，比不对账更危险，因为它给人一种
+      #    已经检查过的错觉。
+      - name: 服务端校验清单是最新的
+        run: python manage.py export_enforced_perms --check
+
+      # 🔒 本阶段最重要的一条架构承诺（ADR-013 / FAC-4）：
+      #    权限内核不认识任何表现层。三种表现层接完，它一行都没改。
+      - name: 权限内核未被表现层污染
+        run: |
+          git fetch origin main --depth=1
+          if ! git diff --quiet origin/main HEAD -- apps/rbac/services.py; then
+            echo "::error::apps/rbac/services.py 被修改了。"
+            echo "内核不认识表现层是 ADR-013 的核心约束——"
+            echo "需要新字段时在 API 适配层转换，不要改内核。"
+            git diff origin/main HEAD -- apps/rbac/services.py
+            exit 1
+          fi

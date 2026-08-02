@@ -1,16 +1,14 @@
-import csv
-
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Q
-from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.rbac.decorators import require_perm
 
 from .constants import Priority, Status
+from .export import tickets_csv_response
+from .filters import apply_ticket_filters
 from .forms import TicketAssignForm, TicketForm
 from .models import Ticket
 from .permissions import TicketPerm
@@ -32,13 +30,11 @@ def _base_queryset(user):
 def ticket_list(request):
     qs = _base_queryset(request.user)
 
+    # v1.3.0：筛选条件抽到 filters.py，与 API 版共用一份实现。
+    # 两边各写一份的话，同一个用户在两个前端会看到不同的条数，
+    # 而两边的数据权限其实都是对的——这种 bug 极难定位。
+    qs = apply_ticket_filters(qs, request.GET)
     kw = request.GET.get("kw", "").strip()
-    if kw:
-        qs = qs.filter(Q(title__icontains=kw) | Q(content__icontains=kw))
-    if status := request.GET.get("status"):
-        qs = qs.filter(status=status)
-    if priority := request.GET.get("priority"):
-        qs = qs.filter(priority=priority)
 
     page = Paginator(qs, 20).get_page(request.GET.get("page"))
     return render(
@@ -63,7 +59,7 @@ def ticket_detail(request, pk):
 @login_required
 @require_perm(TicketPerm.CREATE)
 def ticket_create(request):
-    form = TicketForm(request.POST or None)
+    form = TicketForm(request.POST or None, actor=request.user)
     if request.method == "POST" and form.is_valid():
         # ⚠️ 必须**先**检查用户有没有部门，再赋值。
         #    department 是非空外键，先赋 None 再读 ticket.department
@@ -96,7 +92,7 @@ def ticket_update(request, pk):
     # ⚠️ 注意这里同时覆盖了 GET 和 POST——只挡住 GET 是很常见的疏漏，
     #    攻击者直接构造 POST 就绕过了。
     ticket = get_object_or_404(_base_queryset(request.user), pk=pk)
-    form = TicketForm(request.POST or None, instance=ticket)
+    form = TicketForm(request.POST or None, instance=ticket, actor=request.user)
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, "工单已更新")
@@ -120,7 +116,7 @@ def ticket_delete(request, pk):
 @require_perm(TicketPerm.ASSIGN)
 def ticket_assign(request, pk):
     ticket = get_object_or_404(_base_queryset(request.user), pk=pk)
-    form = TicketAssignForm(request.POST or None, instance=ticket)
+    form = TicketAssignForm(request.POST or None, instance=ticket, actor=request.user)
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, "已派单")
@@ -139,23 +135,5 @@ def ticket_export(request):
     越权入口，因为它通常是后加的功能，代码路径也和列表页不同。
     验收标准：导出的行数 == 列表页显示的总数。
     """
-    qs = _base_queryset(request.user)
-
-    response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
-    response["Content-Disposition"] = 'attachment; filename="tickets.csv"'
-    writer = csv.writer(response)
-    writer.writerow(["ID", "标题", "状态", "优先级", "创建人", "归属部门", "处理人", "创建时间"])
-    for t in qs.iterator():
-        writer.writerow(
-            [
-                t.id,
-                t.title,
-                t.get_status_display(),
-                t.get_priority_display(),
-                str(t.creator),
-                t.department.name,
-                str(t.assignee) if t.assignee else "",
-                t.created_at.strftime("%Y-%m-%d %H:%M"),
-            ]
-        )
-    return response
+    qs = apply_ticket_filters(_base_queryset(request.user), request.GET)
+    return tickets_csv_response(qs)

@@ -44,6 +44,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # SPA 用它感知「我手里的权限快照过期了」（F-ADR-010）。
+    # 放在最后：它只读一个版本号，不需要参与前面任何一层的处理。
+    "apps.common.middleware.RbacVersionMiddleware",
 ]
 
 # ⚠️ 必须在项目第一次 migrate 之前设定。一旦 auth 应用的迁移跑过，
@@ -138,6 +141,11 @@ from datetime import timedelta  # noqa: E402
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
+        # SPA 走这个：同域 + httpOnly Cookie + 强制 CSRF（F-ADR-003）
+        "rest_framework.authentication.SessionAuthentication",
+        # 移动端 / 第三方 / 脚本走这个。
+        # 一个应用可以有多种认证方式，但只能有一套授权逻辑——
+        # HasPerm 不关心你怎么认证的，它只问 request.user 是谁。
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
@@ -149,6 +157,10 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    # 未认证 -> 401，已认证但无权限 -> 403。
+    # 加上 SessionAuthentication 后 DRF 会把 401 降级成 403，
+    # 而 SPA 必须严格区分这两者（F-ADR-011），详见该文件的说明。
+    "EXCEPTION_HANDLER": "apps.rbac.api.exceptions.api_exception_handler",
 }
 
 SIMPLE_JWT = {

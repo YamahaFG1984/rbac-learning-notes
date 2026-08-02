@@ -48,3 +48,14 @@ permission_denied = django.dispatch.Signal()
 
 role_permissions_changed = django.dispatch.Signal()
 user_roles_changed = django.dispatch.Signal()
+
+# 📌 v1.3.0 补：数据范围变更。
+#
+# 之前 AuditAction.ROLE_SCOPE_SET 这个枚举值**定义了却没人发出**——
+# 也就是说「把一个角色从『仅本人』改成『全部数据』」不留任何审计记录，
+# 而这是影响最大的权限变更之一。
+#
+# FR-9.2（P0）要求记录所有权限变更行为，数据范围显然属于权限变更。
+# 枚举里有值、代码里没人用，是「需求写了但没落地」最难发现的形态：
+# 它不报错，也不缺功能，只是那条日志永远不会出现。
+role_scope_changed = django.dispatch.Signal()
