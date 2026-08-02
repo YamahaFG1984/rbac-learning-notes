@@ -8,6 +8,7 @@ from django.dispatch import receiver
 from apps.rbac.signals import (
     permission_denied,
     role_permissions_changed,
+    role_scope_changed,
     user_roles_changed,
 )
 
@@ -55,4 +56,23 @@ def on_user_roles_changed(sender, user, actor, before, after, **kwargs):
             "added": sorted(set(after) - set(before)),
             "removed": sorted(set(before) - set(after)),
         },
+    )
+
+
+@receiver(role_scope_changed)
+def on_role_scope_changed(sender, role, actor, before, after, **kwargs):
+    """📌 数据范围变更（v1.3.0 补）。
+
+    这个 receiver 之前不存在，AuditAction.ROLE_SCOPE_SET 是个
+    「定义了却没人发出」的枚举值——把角色从「仅本人」改成「全部数据」
+    不留任何痕迹，而这是影响最大的权限变更之一（FR-9.2 是 P0）。
+
+    「需求写了但没落地」最难发现的形态就是这种：不报错、不缺功能，
+    只是那条日志永远不会出现。**枚举值和它的发出点应该成对存在。**
+    """
+    log(
+        AuditAction.ROLE_SCOPE_SET,
+        actor=actor,
+        target=role,
+        detail={"before": before, "after": after},
     )

@@ -24,10 +24,21 @@ class RoleViewSet(viewsets.ModelViewSet):
 
 
 class PermissionViewSet(viewsets.ReadOnlyModelViewSet):
-    """权限点只读——它由代码声明 + sync_permissions 同步，不允许 API 改（ADR-004）。"""
+    """权限点只读——它由代码声明 + sync_permissions 同步，不允许 API 改（ADR-004）。
+
+    ⚠️ 同 DepartmentViewSet：不分页。权限点也是树。
+
+       这个坑我在 fe-v0.12.0 真的踩了：前端传 ?page_size=500，
+       但 DRF 没配 page_size_query_param，参数被**静默忽略**，
+       页面只显示了 26 个权限点里的 20 个——不报错、不警告。
+
+       「传了一个不被识别的参数」是最难发现的一类错误：
+       它长得像生效了。
+    """
 
     serializer_class = PermissionSerializer
     queryset = Permission.objects.all()
+    pagination_class = None
     perm_map = {"list": PermPerm.VIEW, "retrieve": PermPerm.VIEW}
 
 

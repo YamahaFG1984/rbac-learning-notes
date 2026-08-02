@@ -10,6 +10,8 @@ from apps.common.views import build_tree_rows
 from .decorators import require_perm
 
 from .forms import RoleForm
+from .perm_tree import annotate_role_perm_rows, has_inherited
+from .scope_config import save_role_scope
 from .permissions import PermPerm, RolePerm
 from apps.accounts.models import Department
 from apps.common.views import build_tree_rows as _btr
@@ -102,30 +104,16 @@ def role_perm_assign(request, pk):
         return redirect("rbac:role_list")
 
     perms = Permission.objects.filter(is_active=True, is_deprecated=False)
-    checked = get_role_permission_ids(role)
 
+    # v1.3.0：checked / inherited 的计算抽到 perm_tree.py，与 SPA 共用。
     # 继承来的权限以灰色只读勾选显示，与直接授予的视觉区分。
     # 不能在子角色里取消一个继承来的权限——那需要「负权限」，本项目不做。
-    inherited_codes = set()
-    if role.inherits_from_id:
-        inherited_codes = set(get_role_effective_codes(role.inherits_from))
-
-    rows = build_tree_rows(perms)
-    for row in rows:
-        obj = row["obj"]
-        is_direct = obj.pk in checked
-        # ⚠️ 只对「纯继承、非直接授予」的项禁用。
-        #    disabled 的 checkbox 不会被提交——如果一个权限既是直接授予
-        #    又是继承来的，禁用它会导致保存时把直接授权静默删掉。
-        row["inherited"] = (
-            bool(obj.code) and obj.code in inherited_codes and not is_direct
-        )
-        row["checked"] = is_direct or row["inherited"]
+    rows = annotate_role_perm_rows(role, build_tree_rows(perms))
 
     return render(
         request,
         "rbac/role_perm_assign.html",
-        {"role": role, "rows": rows, "has_inherited": bool(inherited_codes)},
+        {"role": role, "rows": rows, "has_inherited": has_inherited(role)},
     )
 
 
@@ -175,10 +163,14 @@ def role_data_scope(request, pk):
     role = get_object_or_404(Role, pk=pk)
 
     if request.method == "POST":
-        scope = int(request.POST.get("data_scope", role.data_scope))
-        role.data_scope = scope
-        role.save()
-        save_role_departments(role, request.POST.getlist("departments"))
+        # v1.3.0：保存逻辑（含审计信号）抽到 scope_config.py，与 SPA 共用。
+        # 各写一遍的话很可能只有一边记了日志，而缺失的那边正好是会被利用的那边。
+        save_role_scope(
+            role,
+            request.POST.get("data_scope", role.data_scope),
+            request.POST.getlist("departments"),
+            actor=request.user,
+        )
         messages.success(request, "数据范围已更新")
         return redirect("rbac:role_list")
 

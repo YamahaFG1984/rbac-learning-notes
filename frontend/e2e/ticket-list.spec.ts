@@ -1,6 +1,18 @@
 import { expect, test } from '@playwright/test'
 
 import { login } from './helpers'
+import { reseedDatabase } from './reseed'
+
+/*
+ * 🔴 本文件断言的是**绝对条数**（80/80/50/5），它必须和后端
+ *    tests/test_permission_matrix.py 的 SCOPE_MATRIX 完全一致——
+ *    这是这些用例全部的价值。
+ *
+ *    但 ticket-crud.spec.ts 会新建/删除工单，而 Playwright 按文件名跑，
+ *    crud 在 list 前面。不重置的话 80 会变成 80±1，测试红了而代码没问题。
+ *    详见 reseed.ts 顶部的说明。
+ */
+test.beforeAll(reseedDatabase)
 
 /** 必须与后端 tests/test_permission_matrix.py 的 SCOPE_MATRIX 完全一致 */
 const SCOPE_MATRIX: Array<[string, number]> = [

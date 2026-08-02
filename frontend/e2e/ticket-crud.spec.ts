@@ -1,6 +1,10 @@
 import { expect, test } from '@playwright/test'
 
 import { login } from './helpers'
+import { reseedDatabase } from './reseed'
+
+// 本文件会新建和删除工单。跑完还原，不把污染留给后面的文件。
+test.afterAll(reseedDatabase)
 
 /** 技术部的工单 id —— 不在客服部任何人的数据范围内 */
 async function outOfScopeTicketId(page: import('@playwright/test').Page) {
