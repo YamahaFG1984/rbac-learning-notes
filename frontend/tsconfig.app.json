@@ -18,6 +18,7 @@
 
     /* 路径别名，与 vite.config.ts 的 resolve.alias 保持一致。
        TS 6 起 baseUrl 已弃用，paths 直接相对 tsconfig 所在目录解析。 */
+    "resolveJsonModule": true,
     "paths": { "@/*": ["./src/*"] },
 
     /* Linting */

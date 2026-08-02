@@ -139,3 +139,63 @@ def _drop_code(nodes, code):
         copy["children"] = _drop_code(n.get("children", []), code)
         result.append(copy)
     return result
+
+
+# --------------------------------------------------------------------------- #
+# 导出给前端的两份清单（v1.3.0）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.django_db
+class TestExportedArtifacts:
+    """前端的结构性测试拿这两份文件对账，它们过期了对账就是假的。"""
+
+    def test_perm_constants_are_up_to_date(self):
+        """frontend/src/constants/permissions.ts 与数据库一致。"""
+        call_command("sync_permissions", verbosity=0)
+        call_command("export_perm_constants", check=True, verbosity=0)
+
+    def test_enforced_perms_export_is_up_to_date(self):
+        """frontend/src/test/enforced-perms.json 与路由表一致。
+
+        🔴 这份文件是前端「安全红线 2」对账的依据：
+           每一个 <Can perm={...}> 都必须有对应的服务端校验。
+
+           它过期的话，前端那条测试仍然会绿——**用一份陈旧的清单对账，
+           比不对账更危险**，因为它给人一种已经检查过的错觉。
+        """
+        call_command("export_enforced_perms", check=True, verbosity=0)
+
+    def test_every_frontend_perm_code_is_enforced(self):
+        """从后端这一侧再验一次同样的不变式。
+
+        前端的 permCoverage.test.ts 从 TSX 里扫 PERM.XXX；
+        这里直接比对两份导出文件。两边算法不同、结论必须一致——
+        任何一边单独出错都会被另一边发现。
+        """
+        import json
+        import re
+        from pathlib import Path
+
+        from django.conf import settings
+
+        from apps.rbac.management.commands.export_enforced_perms import (
+            collect_enforced_codes,
+        )
+
+        call_command("sync_permissions", verbosity=0)
+
+        constants = Path(
+            settings.BASE_DIR, "frontend/src/constants/permissions.ts"
+        ).read_text(encoding="utf-8")
+        declared = set(re.findall(r": '([a-z_]+:[a-z_]+:[a-z_]+)'", constants))
+        assert declared, "没解析出任何权限码，说明正则或文件格式变了"
+
+        enforced = collect_enforced_codes()
+        assert declared - enforced == set(), (
+            f"这些权限码前端可用但服务端没有任何地方校验：{sorted(declared - enforced)}"
+        )
+
+        # 反过来也有意义：服务端校验了但前端常量表里没有 —— 说明常量文件过期
+        stale = enforced - declared
+        assert stale == set(), f"服务端校验了但常量表里没有：{sorted(stale)}"
