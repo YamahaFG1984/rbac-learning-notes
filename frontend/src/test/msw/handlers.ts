@@ -32,7 +32,10 @@ export function resetMswState() {
 }
 
 /** 所有 API 响应都带版本号头，和真后端的中间件一致 */
-function withVersion(body: unknown, init: { status?: number } = {}) {
+function withVersion(
+  body: Parameters<typeof HttpResponse.json>[0],
+  init: { status?: number } = {},
+) {
   return HttpResponse.json(body, {
     ...init,
     headers: { 'X-RBAC-Version': String(rbacVersion) },

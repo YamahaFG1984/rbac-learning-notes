@@ -49,3 +49,25 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   reset: () => set({ ...EMPTY, status: 'anonymous' }),
 }))
+
+/**
+ * 🎯 只在 E2E 构建里把 store 挂到 window 上。
+ *
+ * fe-v0.16.0 的核心测试要**篡改**权限，证明前端的三层体验
+ * （路由守卫、菜单、按钮）全部可以被绕过，而系统依然安全。
+ *
+ * ⚠️ 「为了测试而降低安全」吗？**不是。**
+ *
+ *    攻击者本来就能做到同样的事，而且不需要这个变量：
+ *    React DevTools 能直接改组件状态，devtools 里能改任何 JS 内存，
+ *    最省事的是他连前端都不用——直接 curl 你的 API。
+ *
+ *    挂上去只是让**测试**能表达这件事，它没有创造任何新的攻击面。
+ *
+ *    生产构建仍然不挂，理由不是安全，是**没必要**：
+ *    一个只有测试用的全局变量留在生产包里，
+ *    下一个人看到会去猜它是干什么的。
+ */
+if (import.meta.env.VITE_EXPOSE_AUTH_STORE === '1') {
+  ;(window as unknown as Record<string, unknown>).__AUTH_STORE__ = useAuthStore
+}
