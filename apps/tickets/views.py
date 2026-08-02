@@ -59,7 +59,7 @@ def ticket_detail(request, pk):
 @login_required
 @require_perm(TicketPerm.CREATE)
 def ticket_create(request):
-    form = TicketForm(request.POST or None)
+    form = TicketForm(request.POST or None, actor=request.user)
     if request.method == "POST" and form.is_valid():
         # ⚠️ 必须**先**检查用户有没有部门，再赋值。
         #    department 是非空外键，先赋 None 再读 ticket.department
@@ -92,7 +92,7 @@ def ticket_update(request, pk):
     # ⚠️ 注意这里同时覆盖了 GET 和 POST——只挡住 GET 是很常见的疏漏，
     #    攻击者直接构造 POST 就绕过了。
     ticket = get_object_or_404(_base_queryset(request.user), pk=pk)
-    form = TicketForm(request.POST or None, instance=ticket)
+    form = TicketForm(request.POST or None, instance=ticket, actor=request.user)
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, "工单已更新")
@@ -116,7 +116,7 @@ def ticket_delete(request, pk):
 @require_perm(TicketPerm.ASSIGN)
 def ticket_assign(request, pk):
     ticket = get_object_or_404(_base_queryset(request.user), pk=pk)
-    form = TicketAssignForm(request.POST or None, instance=ticket)
+    form = TicketAssignForm(request.POST or None, instance=ticket, actor=request.user)
     if request.method == "POST" and form.is_valid():
         form.save()
         messages.success(request, "已派单")

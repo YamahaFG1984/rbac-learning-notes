@@ -352,3 +352,133 @@ class TestListAndExport:
 
         api = api_as("cs_manager").get("/api/v1/tickets/export/").content
         assert web == api
+
+
+# --------------------------------------------------------------------------- #
+# 派单：候选人列表的越权（v1.3.0 补的一个真实漏洞）
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.django_db
+class TestAssign:
+    """🔴 一个「不该看到用户列表」的人，通过派单下拉框看到了用户列表。
+
+    这类漏洞不出现在权限矩阵里——矩阵测的是接口，而它藏在一个表单控件里。
+    """
+
+    def test_assignable_users_is_scoped_to_own_subtree(self, world):
+        """cs_manager 在客服部，只该看到客服部及其子部门的人。"""
+        payload = api_as("cs_manager").get(
+            "/api/v1/tickets/assignable-users/"
+        ).json()
+        names = {u["username"] for u in payload}
+
+        assert names == {"cs_manager", "cs_staff", "no_role"}
+        # 技术部的人和总部的超管都不在里面
+        assert "techie" not in names
+        assert "superadmin" not in names
+
+    def test_assignable_users_needs_only_assign_perm(self, world):
+        """cs_manager **没有** system:user:view，但拿得到候选人列表。
+
+        反过来说：这个接口如果复用 /api/v1/users/，
+        就等于强迫「能派单的人」都得有「用户管理」权限——
+        权限点被业务需求倒逼着变粗，是权限模型腐化的典型路径。
+        """
+        client = api_as("cs_manager")
+        assert client.get("/api/v1/users/").status_code == 403
+        assert client.get("/api/v1/tickets/assignable-users/").status_code == 200
+
+    def test_assignable_users_does_not_leak_contact_info(self, world):
+        """只返回下拉框需要的字段，不带手机号 / 邮箱。
+
+        接口返回的字段量应该由调用方的需要决定，
+        不是由「手边正好有一个 UserSerializer」决定。
+        """
+        payload = api_as("cs_manager").get(
+            "/api/v1/tickets/assignable-users/"
+        ).json()
+        assert set(payload[0]) == {"id", "username", "real_name", "department_name"}
+
+    def test_assign_requires_assign_perm(self, world):
+        """cs_staff 有 update 没有 assign。"""
+        ticket = Ticket.objects.filter(creator__username="cs_staff").first()
+        resp = api_as("cs_staff").post(
+            f"/api/v1/tickets/{ticket.pk}/assign/", {"assignee": None}, format="json"
+        )
+        assert resp.status_code == 403
+
+    def test_assign_out_of_scope_ticket_is_404(self, world):
+        """技术部的工单不在 cs_manager 的数据范围内 —— 404 不是 403。"""
+        ticket = Ticket.objects.filter(department__code="TECH").first()
+        resp = api_as("cs_manager").post(
+            f"/api/v1/tickets/{ticket.pk}/assign/", {"assignee": None}, format="json"
+        )
+        assert resp.status_code == 404
+
+    def test_cannot_assign_to_user_outside_scope(self, world):
+        """🔴 下拉框只列了范围内的人，但攻击者可以直接提交任意 id。
+
+        下拉框不是安全边界 —— 和「隐藏按钮不是安全边界」是同一句话。
+        """
+        ticket = Ticket.objects.filter(department__code="CS1").first()
+        techie = User.objects.get(username="techie")
+
+        resp = api_as("cs_manager").post(
+            f"/api/v1/tickets/{ticket.pk}/assign/",
+            {"assignee": techie.pk},
+            format="json",
+        )
+        assert resp.status_code == 400
+        assert "assignee" in resp.json()
+
+    def test_assign_succeeds_within_scope(self, world):
+        ticket = Ticket.objects.filter(department__code="CS1").first()
+        staff = User.objects.get(username="cs_staff")
+
+        resp = api_as("cs_manager").post(
+            f"/api/v1/tickets/{ticket.pk}/assign/",
+            {"assignee": staff.pk},
+            format="json",
+        )
+        assert resp.status_code == 200
+        ticket.refresh_from_db()
+        assert ticket.assignee_id == staff.pk
+
+
+@pytest.mark.django_db
+class TestTemplateAssignFormIsScopedToo:
+    """同一条规则必须在**两个前端**都生效。
+
+    v0.15.0 的 TicketAssignForm 用了 ModelForm 的默认 queryset（= 全部用户），
+    修的时候如果只修 API 那一侧，模板版的泄露就留在原地了。
+    """
+
+    def test_template_form_uses_same_candidate_set(self, world):
+        from apps.tickets.forms import TicketAssignForm, TicketForm
+
+        actor = User.objects.get(username="cs_manager")
+        expected = {"cs_manager", "cs_staff", "no_role"}
+
+        for form_cls in (TicketAssignForm, TicketForm):
+            qs = form_cls(actor=actor).fields["assignee"].queryset
+            assert {u.username for u in qs} == expected, form_cls.__name__
+
+    def test_without_actor_it_falls_back_to_empty_not_everyone(self, world):
+        """🔴 忘了传 actor 时，兜底是**空集**而不是全部用户。
+
+        actor 是可选参数（ModelForm 在很多地方会被无参实例化）。
+        兜底如果是「全部用户」，那么任何一个忘记传 actor 的调用点
+        都会**悄无声息地**退回 v0.15.0 的泄露。
+
+        空下拉框会立刻被人发现并报 bug；全量下拉框不会——
+        没有人会因为「选项太多」去提工单。
+
+        这就是「默认值指向出错后果最轻的方向」在表单上的形态，
+        同 data_scope 默认 SELF_ONLY、build_scope_q 的四处 Q(pk__in=[])。
+        """
+        from apps.tickets.forms import TicketAssignForm, TicketForm
+
+        assert User.objects.count() == 6
+        for form_cls in (TicketAssignForm, TicketForm):
+            assert form_cls().fields["assignee"].queryset.count() == 0

@@ -16,9 +16,22 @@ test.describe('动态路由的时序', () => {
 
     // 直接进详情页再刷新——路由表是动态注册的，
     // AppRouter 若不在 AuthBootstrap 内部，这里会掉进 404
-    await page.goto('/tickets/1')
+    //
+    // 📌 fe-v0.11.0 起详情页的标题是工单标题本身（占位页时是「工单详情」），
+    //    所以这里改成先从列表点进去，拿到真实的 URL 和标题再刷新。
+    // ⚠️ 先拿链接文本，不要点完再读 h4 —— 那时 h4 可能还是「工单列表」，
+    //    断言会拿到一个陈旧的值然后在刷新后「不匹配」，
+    //    报错指向刷新，真正的原因却是没等导航完成。
+    const link = page.locator('.ant-table-tbody tr.ant-table-row a').first()
+    const title = (await link.textContent())!
+    await link.click()
+    await expect(page).toHaveURL(/\/tickets\/\d+$/)
+    await expect(page.locator('h4.ant-typography')).toHaveText(title)
+
     await page.reload()
-    await expect(page.getByRole('heading', { name: '工单详情' })).toBeVisible()
+
+    await expect(page.locator('h4.ant-typography')).toHaveText(title)
+    await expect(page.getByText('不存在或你无权访问')).toHaveCount(0)
   })
 
   test('🔴 未登录直达受保护 URL，登录后回到原地址', async ({ page }) => {

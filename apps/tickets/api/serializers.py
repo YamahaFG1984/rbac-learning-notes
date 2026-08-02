@@ -3,6 +3,27 @@ from rest_framework import serializers
 from apps.tickets.models import Ticket
 
 
+class AssigneeSerializer(serializers.Serializer):
+    """派单候选人。
+
+    ⚠️ 刻意**不复用** accounts 的 UserSerializer。
+
+       那个 serializer 带 phone / email / is_active / date_joined，
+       而这里的调用方只需要「显示一个名字、提交一个 id」。
+       复用会让一个只有 ticket:ticket:assign 的人拿到用户的手机号和邮箱——
+       通过一个下拉框接口。
+
+       **接口返回的字段量，应该由调用方的需要决定，不是由「手边有什么」决定。**
+    """
+
+    id = serializers.IntegerField(read_only=True)
+    username = serializers.CharField(read_only=True)
+    real_name = serializers.CharField(read_only=True)
+    department_name = serializers.CharField(
+        source="department.name", read_only=True, default=""
+    )
+
+
 class TicketSerializer(serializers.ModelSerializer):
     creator_name = serializers.CharField(source="creator.real_name", read_only=True)
     department_name = serializers.CharField(source="department.name", read_only=True)

@@ -70,3 +70,51 @@ export function exportTicketsUrl(params: Omit<TicketListParams, 'page'>) {
   const suffix = qs.toString()
   return `/api/v1/tickets/export/${suffix ? `?${suffix}` : ''}`
 }
+
+export interface Assignee {
+  id: number
+  username: string
+  real_name: string
+  department_name: string
+}
+
+/**
+ * 派单候选人。
+ *
+ * ⚠️ 走 /tickets/assignable-users/ 而不是 /users/。
+ *    后者要 system:user:view，而 cs_manager 只有 assign 权限——
+ *    复用它等于强迫「能派单的人」都得有「用户管理」权限，
+ *    权限点会被业务需求倒逼着变粗。
+ */
+export async function fetchAssignableUsers() {
+  const { data } = await client.get<Assignee[]>('/tickets/assignable-users/')
+  return data
+}
+
+/** 新建/编辑允许提交的字段。⚠️ 没有 creator / department —— 见 TicketForm 注释 */
+export interface TicketPayload {
+  title: string
+  content: string
+  priority: TicketPriority
+  status: TicketStatus
+  assignee: number | null
+}
+
+export async function createTicket(payload: TicketPayload) {
+  const { data } = await client.post<Ticket>('/tickets/', payload)
+  return data
+}
+
+export async function updateTicket(id: number, payload: TicketPayload) {
+  const { data } = await client.put<Ticket>(`/tickets/${id}/`, payload)
+  return data
+}
+
+export async function deleteTicket(id: number) {
+  await client.delete(`/tickets/${id}/`)
+}
+
+export async function assignTicket(id: number, assignee: number | null) {
+  const { data } = await client.post<Ticket>(`/tickets/${id}/assign/`, { assignee })
+  return data
+}

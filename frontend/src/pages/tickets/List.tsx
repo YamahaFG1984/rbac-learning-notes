@@ -1,6 +1,6 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 
-import { Button, Space, Table, Tag, type TableColumnsType } from 'antd'
+import { App, Button, Space, Table, Tag, type TableColumnsType } from 'antd'
 import { Link } from 'react-router'
 
 import {
@@ -12,8 +12,11 @@ import {
 import { usePermission } from '@/auth/usePermission'
 import { Can } from '@/components/Can'
 import { PERM } from '@/constants/permissions'
+import { AssignModal } from '@/features/tickets/AssignModal'
 import { TicketFilters } from '@/features/tickets/TicketFilters'
+import { TicketForm } from '@/features/tickets/TicketForm'
 import { useTicketList } from '@/features/tickets/useTicketList'
+import { useTicketMutations } from '@/features/tickets/useTicketMutations'
 import { useTableQuery } from '@/hooks/useTableQuery'
 import { PageContainer } from '@/layouts/PageContainer'
 
@@ -55,6 +58,26 @@ const PRIORITY_TAG: Record<number, { color: string; text: string }> = {
 export default function TicketList() {
   const [params, setParams] = useTableQuery(DEFAULTS)
   const query = useTicketList(params)
+  const { create, remove, assign } = useTicketMutations()
+  const { modal } = App.useApp()
+
+  const [creating, setCreating] = useState(false)
+  const [assigningId, setAssigningId] = useState<number | null>(null)
+
+  /*
+   * ⚠️ 删除必须二次确认。
+   *
+   *    这不只是体验问题：列表页的删除按钮和行是对齐的，
+   *    误点一行删掉另一行的数据是真实会发生的事。
+   *    确认框里带上标题，让用户确认的是「这一条」而不是「删除」这个动作。
+   */
+  const confirmRemove = (row: Ticket) =>
+    modal.confirm({
+      title: '确认删除？',
+      content: `工单「${row.title}」将被删除，此操作不可撤销。`,
+      okType: 'danger',
+      onOk: () => remove.mutateAsync(row.id),
+    })
 
   /*
    * ⚠️ hook 不能在 columns 数组里条件调用。
@@ -114,12 +137,21 @@ export default function TicketList() {
                        那就得先把这个东西放对地方。**
                   */}
                   <Can perm={PERM.TICKET_TICKET_ASSIGN}>
-                    <Button type="link" size="small">
+                    <Button
+                      type="link"
+                      size="small"
+                      onClick={() => setAssigningId(row.id)}
+                    >
                       派单
                     </Button>
                   </Can>
                   <Can perm={PERM.TICKET_TICKET_DELETE}>
-                    <Button type="link" size="small" danger>
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      onClick={() => confirmRemove(row)}
+                    >
                       删除
                     </Button>
                   </Can>
@@ -129,6 +161,7 @@ export default function TicketList() {
           ]
         : []),
     ],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [can],
   )
 
@@ -138,7 +171,9 @@ export default function TicketList() {
       extra={
         <>
           <Can perm={PERM.TICKET_TICKET_CREATE}>
-            <Button type="primary">新建工单</Button>
+            <Button type="primary" onClick={() => setCreating(true)}>
+              新建工单
+            </Button>
           </Can>
           <Can perm={PERM.TICKET_TICKET_EXPORT}>
             <Button
@@ -176,6 +211,24 @@ export default function TicketList() {
           showSizeChanger: false,
           onChange: (page) => setParams({ page }),
         }}
+      />
+
+      <TicketForm
+        open={creating}
+        confirmLoading={create.isPending}
+        onCancel={() => setCreating(false)}
+        onSubmit={(payload) => create.mutateAsync(payload)}
+      />
+      <AssignModal
+        open={assigningId !== null}
+        currentAssignee={
+          query.data?.results.find((t) => t.id === assigningId)?.assignee ?? null
+        }
+        confirmLoading={assign.isPending}
+        onCancel={() => setAssigningId(null)}
+        onSubmit={(assignee) =>
+          assign.mutateAsync({ targetId: assigningId!, assignee })
+        }
       />
     </PageContainer>
   )
