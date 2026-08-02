@@ -44,6 +44,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # SPA 用它感知「我手里的权限快照过期了」（F-ADR-010）。
+    # 放在最后：它只读一个版本号，不需要参与前面任何一层的处理。
+    "apps.common.middleware.RbacVersionMiddleware",
 ]
 
 # ⚠️ 必须在项目第一次 migrate 之前设定。一旦 auth 应用的迁移跑过，

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
 import { resetAuthRedirectGuard } from '@/api/client'
+import { resetVersionWatcher } from '@/api/versionWatcher'
 
 import { loginRequest, logoutRequest } from './api'
 import { useAuthStore } from './store'
@@ -34,6 +35,9 @@ export function useLogout() {
       queryClient.clear()
       reset()
       resetAuthRedirectGuard()
+      // ⚠️ 不重置的话，下一个用户登录时 lastSeen 还是上一个会话的值，
+      //    第一个响应就被判成「版本变了」，白白多拉一次 profile。
+      resetVersionWatcher()
     },
   })
 }
