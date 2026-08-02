@@ -1,6 +1,7 @@
 import axios, { type AxiosError } from 'axios'
 
 import { attachCsrfToken } from './csrf'
+import { handleApiError } from './errorHandlers'
 import { watchRbacVersion } from './versionWatcher'
 
 /**
@@ -27,21 +28,6 @@ client.interceptors.request.use(attachCsrfToken)
 //    403 跳登录页会造成「登录 → 403 → 登录」的死循环（F-ADR-011）。
 // --------------------------------------------------------------------------- //
 
-/**
- * 收到 403 时的兜底：强制重拉 profile。
- *
- * ⚠️ 版本号方案有一个盲区：**用户完全不发请求时感知不到**。
- *    他停在一个静态页面上，权限被撤了，屏幕上的按钮还在。
- *
- *    但只要他**点了那个按钮**，就会收到 403 —— 这正是兜底时机。
- *    即使版本号漏了，用户点一次就能恢复到正确状态。
- */
-let onForbidden: (() => void) | null = null
-
-export function setForbiddenHandler(handler: () => void) {
-  onForbidden = handler
-}
-
 /** 会话过期时把用户送去登录页的回调，由 App 注入（避免这里 import 路由） */
 let onUnauthenticated: (() => void) | null = null
 
@@ -60,25 +46,32 @@ export function resetAuthRedirectGuard() {
   redirecting = false
 }
 
+/** 供 errorHandlers 调用：401 跳登录页，已做并发去重 */
+export function redirectToLoginOnce() {
+  if (redirecting) return
+  redirecting = true
+  onUnauthenticated?.()
+}
+
 client.interceptors.response.use(
   (response) => {
     // 版本号搭在已有响应上，零额外请求（F-ADR-010）
     void watchRbacVersion(response)
     return response
   },
-  (error: AxiosError) => {
+  (error: AxiosError<{ detail?: string }>) => {
     if (error.response) {
       // ⚠️ 错误响应也带版本号 —— 而且这恰恰是最需要它的时候：
       //    权限刚被撤销时，用户碰到的第一个响应往往就是 403。
       void watchRbacVersion(error.response)
     }
-    if (error.response?.status === 401 && !redirecting) {
-      redirecting = true
-      onUnauthenticated?.()
-    }
-    if (error.response?.status === 403) {
-      onForbidden?.()
-    }
+
+    handleApiError(error)
+
+    // ⚠️ 一定要继续 reject。
+    //    这里 return 一个 resolved promise 的话，调用方拿到的是
+    //    「成功但 data 是 undefined」——错误被吞掉，页面显示空白，
+    //    而且 Query 认为请求成功了，不会进 error 分支。
     return Promise.reject(error)
   },
 )

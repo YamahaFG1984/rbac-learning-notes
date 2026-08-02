@@ -1,47 +1,11 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test } from '@playwright/test'
 
-import { login } from './helpers'
+import { login, revokePermission } from './helpers'
 import { reseedDatabase } from './reseed'
 
 // 本文件会撤销角色权限，前后各重置一次
 test.beforeAll(reseedDatabase)
 test.afterAll(reseedDatabase)
-
-/** 用管理员身份撤掉某个角色的某个权限（模拟「窗口 A」的操作） */
-async function revokePermission(admin: Page, roleCode: string, permCode: string) {
-  await admin.evaluate(
-    async ({ roleCode, permCode }) => {
-      const csrf = document.cookie.match(/csrftoken=([^;]+)/)?.[1] ?? ''
-      const roles = await (
-        await fetch('/api/v1/roles/', { credentials: 'same-origin' })
-      ).json()
-      const role = (roles.results ?? roles).find(
-        (r: { code: string }) => r.code === roleCode,
-      )
-
-      const payload = await (
-        await fetch(`/api/v1/roles/${role.id}/permissions/`, {
-          credentials: 'same-origin',
-        })
-      ).json()
-
-      const keep = payload.nodes
-        .filter(
-          (n: { checked: boolean; inherited: boolean; code: string | null }) =>
-            n.checked && !n.inherited && n.code !== permCode,
-        )
-        .map((n: { id: number }) => n.id)
-
-      await fetch(`/api/v1/roles/${role.id}/permissions/`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
-        credentials: 'same-origin',
-        body: JSON.stringify({ permissions: keep }),
-      })
-    },
-    { roleCode, permCode },
-  )
-}
 
 /**
  * 🔴 本 tag 的核心场景。这个问题在 Django 模板版**根本不存在**：

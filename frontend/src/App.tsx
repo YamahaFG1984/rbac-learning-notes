@@ -4,7 +4,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import { App as AntdApp } from 'antd'
 import { BrowserRouter, useNavigate } from 'react-router'
 
-import { setForbiddenHandler, setUnauthenticatedHandler } from '@/api/client'
+import { redirectToLoginOnce, setUnauthenticatedHandler } from '@/api/client'
+import { configureErrorHandlers } from '@/api/errorHandlers'
 import { configureVersionWatcher } from '@/api/versionWatcher'
 import { AuthBootstrap } from '@/auth/AuthBootstrap'
 import { useAuthStore } from '@/auth/store'
@@ -54,10 +55,13 @@ function VersionWatcherBridge() {
       notify: (text) => message.info(text),
     })
 
-    // 403 兜底：用户停在静态页面时版本号感知不到，
-    // 但他一点按钮就会撞上 403（见 client.ts 的说明）
-    setForbiddenHandler(() => {
-      void refetchProfile()
+    configureErrorHandlers({
+      redirectToLogin: redirectToLoginOnce,
+      // 403 兜底：用户停在静态页面时版本号感知不到，
+      // 但他一点按钮就会撞上 403（fe-v0.13.0 的盲区）
+      refetchProfile: () => void refetchProfile(),
+      warn: (text) => message.warning(text),
+      error: (text) => message.error(text),
     })
   }, [queryClient, message])
 
