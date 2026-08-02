@@ -34,6 +34,7 @@
 | [`docs/04-横向对比.md`](docs/04-横向对比.md) | 与 Django 原生 / django-guardian / Casbin / 若依 的对照分析、选型决策树 |
 | [`CLAUDE.md`](CLAUDE.md) | 工程约定：命名规范、依赖方向、安全红线、每个 tag 的完成定义 |
 | [`docs/frontend/`](docs/frontend/) | **阶段三（`feat/react-frontend` 分支）**：React 前端的 PRD、15 条 F-ADR、17 份 tag 规格书 |
+| [`frontend/CLAUDE.md`](frontend/CLAUDE.md) | 前端工程约定（`feat/react-frontend` 分支） |
 
 > `04-横向对比.md` 建议在完成到 `v0.14.0`（数据权限）之后再读——
 > 没亲手实现过就去读别人的方案，只能记住结论，记不住原因。
@@ -95,10 +96,68 @@ python manage.py runserver
 ### 常用命令
 
 ```bash
-pytest                                              # 310 个测试，约 10 秒
+pytest                                              # 417 个测试，约 18 秒
 pytest tests/security/ -v                           # 只跑越权测试
 pytest --cov --cov-report=term                      # 覆盖率
-python manage.py check                              # 含 rbac.W001 权限声明自检
+python manage.py check                              # 含 rbac.W001/W002 权限声明自检
 python manage.py sync_permissions --check-templates  # 检查模板里的权限码 typo
 bash scripts/smoke_all_tags.sh                      # 遍历所有 tag 冒烟测试
+```
+
+## 阶段三：React SPA（`feat/react-frontend` 分支）
+
+同一个权限内核的第三种表现层。**内核一行都没有改**——
+这是这个阶段最重要的验收条件，也是 ADR-013 那条「内核不认识表现层」
+约束的真正兑现时刻：
+
+```bash
+git checkout feat/react-frontend
+git diff main HEAD -- apps/rbac/services.py     # 期望输出为空
+```
+
+```bash
+# 后端照常起
+python manage.py runserver
+
+# 另开一个终端
+cd frontend && npm install && npm run dev       # http://localhost:5173
+```
+
+> ⚠️ 只访问 **:5173**，不要直接开 :8000 的 SPA 页面。
+> 同域是 httpOnly Cookie 方案的硬性前提（F-ADR-002），
+> Vite 的代理把 `/api` 转给 Django，全程单一源、不需要 CORS。
+
+### 这个阶段真正要回答的问题
+
+Django 模板版里，界面和权限判断是**同一次请求**产生的；
+SPA 手里是一份**快照**。由此产生一整类模板版根本不存在的问题：
+
+| 问题 | 在哪解决 |
+| --- | --- |
+| 撤权之后，用户屏幕上的按钮还在 | `fe-v0.13.0` 版本号感知 |
+| 403 被当成 401 处理 → 登录死循环 | `fe-v0.14.0` 错误分流 |
+| 刷新详情页变 404（路由表还没建好） | `fe-v0.7.0` 时序 |
+| 前端藏了按钮、后端忘了拦 | `fe-v0.15.0` 结构性对账 |
+
+### 🎯 最值得看的一个文件
+
+```bash
+cat frontend/e2e/bypass.spec.ts
+```
+
+它用四步证明**前端权限的安全价值是零**：
+
+```
+隐藏了 → 可以改回来 → 改回来也没用 → 连前端都不用
+```
+
+> 前端权限是给用户的，后端权限是给攻击者的。
+
+### 前端常用命令
+
+```bash
+cd frontend
+npm run test           # 98 个单测
+npm run test:coverage  # 权限相关模块 ≥ 90%
+bash ../scripts/e2e.sh # 92 条 E2E（含越权矩阵），自动重置数据 + 起服务
 ```
