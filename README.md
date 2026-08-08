@@ -18,7 +18,7 @@
 | Django | 5.2.16（LTS） |
 | Python | 3.12 |
 | RBAC 层级 | NIST RBAC1（核心 RBAC + 角色继承）+ 数据行级权限 |
-| 交付形态 | 阶段一：Django 模板 + Tailwind CSS（前后端不分离）<br>阶段二：DRF + JWT（前后端分离），复用同一权限内核<br>阶段三：React SPA（`feat/react-frontend` 分支），同一内核的第三种表现层 |
+| 交付形态 | 阶段一：Django 模板 + Tailwind CSS（前后端不分离）<br>阶段二：DRF + JWT（前后端分离），复用同一权限内核<br>阶段三：React SPA（`feat/react-frontend` 分支），同一内核的第三种表现层<br>阶段四：Vue 3 SPA（`feat/vue-frontend` 分支），**用于跨框架对比** |
 | 多租户 | 不支持（单组织，部门树用于数据权限范围，不做租户隔离） |
 | 数据库 | SQLite（开发/教学）→ PostgreSQL（可选切换） |
 
@@ -35,6 +35,8 @@
 | [`CLAUDE.md`](CLAUDE.md) | 工程约定：命名规范、依赖方向、安全红线、每个 tag 的完成定义 |
 | [`docs/frontend/`](docs/frontend/) | **阶段三（`feat/react-frontend` 分支）**：React 前端的 PRD、15 条 F-ADR、17 份 tag 规格书 |
 | [`frontend/CLAUDE.md`](frontend/CLAUDE.md) | 前端工程约定（`feat/react-frontend` 分支） |
+| [`docs/vue-frontend/`](docs/vue-frontend/) | **阶段四（`feat/vue-frontend` 分支）**：Vue 3 前端的 PRD、15 条 V-ADR、15 份 tag 规格书 |
+| 🎯 [`docs/vue-frontend/04-React与Vue3做法对比.md`](docs/vue-frontend/04-React与Vue3做法对比.md) | **阶段四的主要交付物**：16 个主题，同一件事在 React 和 Vue 里分别怎么做、各自会踩什么坑 |
 
 > `04-横向对比.md` 建议在完成到 `v0.14.0`（数据权限）之后再读——
 > 没亲手实现过就去读别人的方案，只能记住结论，记不住原因。
@@ -161,3 +163,51 @@ npm run test           # 98 个单测
 npm run test:coverage  # 权限相关模块 ≥ 90%
 bash ../scripts/e2e.sh # 92 条 E2E（含越权矩阵），自动重置数据 + 起服务
 ```
+
+## 阶段四：Vue 3 SPA（`feat/vue-frontend` 分支）
+
+同一个内核的**第四种**表现层。但这个阶段的目的不是「再写一个前端」——
+`fe-v1.0.0` 的延伸练习留了一个问题：
+
+> **把前端换成 Vue 再走一遍。哪些 tag 的规格书一个字都不用改？**
+> 那些就是与框架无关的部分——也正是这套文档真正的价值所在。
+
+**本阶段就是去回答它。** 所以主要交付物是那份逐项对比，不是代码。
+
+```bash
+git checkout feat/vue-frontend
+
+git diff main HEAD -- apps/rbac/services.py     # 期望为空（第四次）
+git diff fe-v1.0.0 HEAD -- apps/ config/        # 期望：只有两个管理命令
+```
+
+```bash
+python manage.py runserver                              # 后端照常
+cd frontend-vue && npm install && npm run dev           # http://localhost:5174
+cd frontend && npm run dev                              # :5173，用来实时对照
+```
+
+> 💡 **建议两个前端同时开着做这个阶段。** 左边 :5173 右边 :5174，
+> 同一个账号登录逐个功能对照——「哪里一样、哪里不一样」用看的比用想的准确。
+
+### 这个阶段的受控实验
+
+| 控制住的变量 | 说明 |
+| --- | --- |
+| 后端 | 完全相同，只给两个导出命令加了 `--out` |
+| 需求编号 | `FE-1.1` ↔ `VE-1.1`，一一对应 |
+| 构建 / HTTP / 测试工具 | Vite、axios、TanStack Query、Vitest、MSW、Playwright **同库同版本** |
+| E2E 断言 | 80 / 50 / 5 条，**逐格相同**（这是验收项） |
+
+**在这种条件下，两边写法不同的地方，差异必然来自框架本身。**
+
+### 几个已经能说的结论
+
+| 结论 | 出处 |
+| --- | --- |
+| React 阶段的 **2 个 tag 直接消失了**（后端 Session/CSRF、后端路由字段） | 后端适配层做对之后，接第三个前端的后端成本≈0 |
+| 15 条 V-ADR 里只有 **6 条**真正是 Vue 特有的 | 全部集中在**状态实例化**和**路由注册**两个点上 |
+| 越权矩阵**逐格不变** | 一份能跨框架复用的 E2E，才是真正的规格说明书 |
+| 两边的失误方向**系统性相反** | React 易「更新太多」，Vue 易「更新太少」；React 常「失败得静」，Vue 常「失败得响」 |
+
+详见 🎯 [`docs/vue-frontend/04-React与Vue3做法对比.md`](docs/vue-frontend/04-React与Vue3做法对比.md)。
