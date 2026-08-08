@@ -4,6 +4,7 @@ import { createApp } from 'vue'
 
 import App from './App.vue'
 import router from './router'
+import { installDynamicRoutes } from './router/dynamic'
 
 import 'ant-design-vue/dist/reset.css'
 import './index.css'
@@ -63,6 +64,24 @@ const app = createApp(App)
  *    **根本不存在「什么时候可以用 store」这个问题。**
  */
 app.use(createPinia())
+
+/*
+ * 🔴📌 **必须在 `app.use(createPinia())` 之后、`app.use(router)` 之前。**
+ *
+ *    installDynamicRoutes 会立刻 `useAuthStore()` 去 watch menus，
+ *    所以 pinia 必须已经就绪——放在 router/index.ts 的模块顶层
+ *    （`installGuard` 里）会整页白屏，报错是那句
+ *    「getActivePinia() was called but there was no active Pinia」。
+ *
+ *    ⚠️ **实现本 tag 时我自己踩了这一脚**，而且是在写完 V-ADR-003
+ *       的长篇注释之后——说明「知道有这个坑」和「不踩它」是两回事。
+ *       它的触发条件很隐蔽：`router/index.ts` 是被 import 的，
+ *       import 发生在 main.ts 的第一行，远早于 app.use(createPinia())。
+ *
+ *    放在 app.use(router) 之前，是为了让首次导航发生时 watcher 已经挂好。
+ */
+installDynamicRoutes(router)
+
 app.use(router)
 app.use(VueQueryPlugin, vueQueryOptions)
 

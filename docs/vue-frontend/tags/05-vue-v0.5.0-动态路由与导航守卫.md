@@ -351,19 +351,53 @@ git diff vue-v0.4.0 vue-v0.5.0 -- frontend-vue/src/router/
 
 | 项 | 差异 |
 | --- | --- |
-| `registry.ts`（`import.meta.glob`） | 🟢 **只差文件后缀**（这是 Vite 的能力） |
-| `buildRoutes` | 🟡 同构：返回 `RouteRecordRaw[]` ← `RouteObject[]` |
+| `registry.ts`（`import.meta.glob`） | 🟢 **只差文件后缀 + 不需要 `lazy()`**（这是 Vite 的能力） |
+| `buildRoutes` | 🟡 同构；Vue 版**更纯粹**（只建路由，不掺守卫组件） |
 | **注册方式** | 🔴🔴 `addRoute()` 增量 ← 重建整个 router |
-| **清理** | 🔴🔴 **必须手写 `clearDynamicRoutes`**；React **不需要** |
+| **注册时机** | 🔴🔴📌 **实测真正的坑**：登录不经过守卫的 `unknown` 分支 → 路由没注册 → 403 |
+| **清理** | 🟡📌 **实测：包装成派生效果后变免费**，登出清单回到和 React 一样的四项 |
 | **守卫位置** | 🔴 导航期 `beforeEach` ← 渲染期 `<PermissionGate>` |
 | **刷新时序的解法** | 🔴 `return {...to, replace:true}` ← 「profile 没到就不渲染 router」 |
-| 失败模式 | 🔴 **无限重定向（抛异常）** ← **死锁（静默转圈）** |
-| 403/404 分流 | 🟢 逻辑相同（`knownRoutes` 前缀匹配） |
+| **`installDynamicRoutes` 的调用位置** | 🔴📌 必须在 `app.use(createPinia())` **之后**（我自己踩了 V-ADR-003 那一脚） |
+| 引导的错误状态 | 🔴 要自己造一个模块级 ref ← React 直接用组件的 `error` |
+| 403/404 分流 | 🟢 逻辑相同（`knownRoutes` 前缀匹配，第 5 次「前缀要带分隔符」） |
 | 文件式路由 | 🔴 **Vue 有这条岔路，且必须不走**（V-ADR-013） |
 
-**这个 tag 是两个框架差异最大的地方。**
-[04 对比文档](../04-React与Vue3做法对比.md)总账里「真正 Vue 特有的 6 条决策」，
-另外 3 条（004 / 005 / 013）全在这里。
+### 📌 三处实测修正（都与规格书初稿不同）
+
+**1. 真正的坑是「忘了注册」，不是「忘了清理」**
+
+初稿把注册写成守卫里的一个步骤。但登录时 `status` 从 `anonymous`
+**直接跳到** `authenticated`，不经过 `unknown` 分支 → 路由没注册 →
+跳 `/tickets` 匹配不到 → **403**。「登录成功，然后被自己的前端拒之门外」。
+
+**修法不是补第二个调用点，是把它变回派生值**（`watch(menus, …, {flush:'sync'})`）。
+`flush: 'sync'` 不能省——默认的 `'pre'` 推到下一个 tick，
+赶不上守卫紧接着的 `return { ...to }`。
+
+**2. 清理变免费了，登出清单回到四项**
+
+`auth.reset()` 清空 menus → watcher 移除路由。**不需要在登出里加 `clearDynamicRoutes()`。**
+
+> 「增量 API 多欠一笔债」是真的，但**债可以一次性还清**：
+> 把命令式的 `addRoute` 包装成派生效果，就拿回了 React 的 `f(menus)` 性质。
+> 代价是你必须自己想到这一步——框架不会提示你。
+
+**3. ⚠️ 规格书预言的「进得去但一片空白」没有发生**
+
+关掉全部清理逻辑实测：残留**是真的**（`/tickets` 甚至注册两次），
+但 `push('/system/users')` **仍然 403**——守卫每次导航都查 `meta.perm`，
+残留路由带的是上一个用户的 permCode。
+
+> **「这个 bug 会造成什么后果」和「这个 bug 存在」是两件事。**
+> 详见 [V-ADR-004 的实测修正](../02-设计文档.md)。
+
+**这个 tag 仍然是两个框架差异最大的地方**，但差异的**内容**和预判的不一样：
+预判的是「清理」，实际是「注册时机」和「命令式 vs 派生」。
+
+⚠️ 另外：`installDynamicRoutes(router)` 我一开始放在 `router/index.ts` 的模块顶层，
+**整页白屏**——`router/index.ts` 是被 import 的，那时 `app.use(createPinia())` 还没跑。
+**这是在写完 V-ADR-003 的长篇注释之后踩的**，说明「知道有这个坑」和「不踩它」是两回事。
 
 ---
 

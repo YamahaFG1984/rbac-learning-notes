@@ -1,10 +1,31 @@
 import { useQuery } from '@tanstack/vue-query'
-import { computed, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { fetchProfile } from './api'
 import { useAuthStore } from './store'
 
 export const PROFILE_QUERY_KEY = ['profile'] as const
+
+/**
+ * 引导阶段拉 profile 失败，且**不是 401**。
+ *
+ * ⚠️ **401 不是错误**：未登录用户拉 profile 拿到 401 是完全正常的流程，
+ *    此时应该让守卫把他送去登录页。只有网络错误 / 5xx 才该显示错误页（VE-2.4）。
+ *
+ * 🟡 为什么需要这个模块级 ref，而 React 版不需要：
+ *
+ *    React 的引导在 `<AuthBootstrap>` 组件里，`useProfileQuery()` 的
+ *    `error` / `isFetching` 直接就是组件状态，渲染错误页天经地义。
+ *
+ *    Vue 版从 vue-v0.5.0 起把引导挪进了**导航守卫**（V-ADR-005），
+ *    而守卫在组件外——它拿不到、也产生不了组件状态。
+ *    要让 App.vue 知道「引导失败了」，只能靠一个共享的响应式变量。
+ *
+ *    → 又一次同一个模式：**把职责挪出组件树之后，
+ *      原本免费的「组件状态」就得自己造一份。**
+ */
+export const bootError = ref<unknown | null>(null)
+export const bootRetrying = ref(false)
 
 /**
  * 拉取当前用户的 profile，并写入权限 store。
@@ -87,9 +108,14 @@ export async function fetchProfileIntoStore() {
   try {
     const profile = await fetchProfile()
     auth.setProfile(profile)
+    bootError.value = null
     return profile
   } catch (err) {
     auth.reset() // status → 'anonymous'，**不能留在 unknown**
+    // ⚠️ 401 不是错误，见 bootError 的注释
+    const status = (err as { response?: { status?: number } })?.response?.status
+    bootError.value = status === 401 ? null : err
     throw err
   }
 }
+

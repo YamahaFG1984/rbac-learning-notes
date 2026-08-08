@@ -1,42 +1,45 @@
 <script setup lang="ts">
 import { Button, ConfigProvider, Result } from 'ant-design-vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
-import { computed } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { setUnauthenticatedHandler } from '@/api/client'
 import { useAuthStore } from '@/auth/store'
-import { useProfileQuery } from '@/auth/useProfileQuery'
-import FullPageSpin from '@/components/FullPageSpin.vue'
+import { bootError, fetchProfileIntoStore } from '@/auth/useProfileQuery'
 
 /**
- * 应用启动时问一次后端「我登录了吗」。
+ * ⚠️ vue-v0.5.0 起，**profile 的拉取整个搬进了导航守卫**（V-ADR-005）。
  *
- * 前端不保存 token——它靠这一次请求判断认证状态（F-ADR-002/003）。
+ *    这里不再调 useProfileQuery()——否则 App 的 setup 和守卫会各发一次请求，
+ *    首屏两次 profile，直接违反 VNFR-6。
  *
- * ⚠️ vue-v0.5.0 会把触发时机整个挪到导航守卫里
- *    （那时才需要「profile 到手后再 addRoute」的时序）。
+ *    🟡 React 版没有这个取舍：它的引导（<AuthBootstrap>）和守卫（<RequireAuth>）
+ *       都在组件树里，共用同一个 useProfileQuery 的缓存，天然只有一次请求。
+ *
+ *       **把职责挪出组件树的代价，在这里第三次出现**：
+ *         · 登出后要自己发起导航（vue-v0.2.0）
+ *         · 引导期 401 要自己判断（vue-v0.3.0）
+ *         · 引导的错误状态要自己造一个响应式变量（这里）
  */
 const auth = useAuthStore()
 const router = useRouter()
 
-const { error, isError, isFetching, refetch } = useProfileQuery()
+const retrying = ref(false)
 
-/*
- * ⚠️ **401 不是错误。**
- *
- *    未登录用户拉 profile 拿到 401 是完全正常的流程——此时应该正常渲染，
- *    让路由守卫把他送去登录页。只有网络错误 / 5xx 才该显示错误页（VE-2.4）。
- *
- *    🟡 React 版这段逻辑在 <AuthBootstrap> 组件里，Vue 版直接放在 App 的
- *       setup + template 里。**判断逻辑逐字相同，只是落点不同**——
- *       React 需要一个组件来「包住 children 并决定渲不渲染」，
- *       Vue 用 v-if 就够了。
- */
-const httpStatus = computed(
-  () => (error.value as { response?: { status?: number } } | null)?.response?.status,
-)
-const bootFailed = computed(() => isError.value && httpStatus.value !== 401)
+/** VE-2.4：引导失败时的重试。重新拉一次 profile，成功就补注册路由并重新导航。 */
+async function retryBoot() {
+  retrying.value = true
+  try {
+    // ⚠️ 不需要手动注册路由——setProfile 写 menus 时 sync watcher 会做（dynamic.ts）
+    await fetchProfileIntoStore()
+    await router.replace(router.currentRoute.value.fullPath)
+  } catch {
+    // bootError 已由 fetchProfileIntoStore 设置，模板会显示
+  } finally {
+    retrying.value = false
+  }
+}
 
 /**
  * 把「会话过期怎么办」注入 axios 拦截器——避免 api 层直接依赖路由。
@@ -52,8 +55,7 @@ setUnauthenticatedHandler(() => {
   /*
    * 🔴 **已经在登录页时，不要把自己记成 redirect 目标。**
    *
-   *    实测踩到的真 bug（vue-v0.3.0 发现，但从 vue-v0.2.0 起就存在，
-   *    只是被当时测试的导航顺序掩盖了）：
+   *    实测踩到的真 bug（vue-v0.3.0 发现，从 vue-v0.2.0 起就存在）：
    *
    *      直接打开 /login → 引导阶段拉 profile 拿到 401
    *        → 这个 handler 把 URL 改成 /login?redirect=/login
@@ -68,12 +70,9 @@ setUnauthenticatedHandler(() => {
    *       setUnauthenticatedHandler **根本还没被调用**。
    *
    *       它的「注入」发生在**组件挂载**时，天然带着一道时序门；
-   *       Vue 的注入发生在 **setup** 时（App 的 setup 一开始就跑完），
-   *       没有这道门。
+   *       Vue 的注入发生在 **setup** 时，没有这道门。
    *
-   *       → 同一段逻辑，React 靠组件树层级顺带获得了保护，Vue 必须显式写出来。
-   *         这和「导航期守卫对状态变化无感」是同一类差异的两面：
-   *         **React 的行为由组件树的形状决定，Vue 的行为由代码的执行顺序决定。**
+   *       → **React 的行为由组件树的形状决定，Vue 的行为由代码的执行顺序决定。**
    */
   if (window.location.pathname === '/login') {
     void router.replace('/login')
@@ -99,37 +98,30 @@ setUnauthenticatedHandler(() => {
           antdv 4（Vue） ：:auto-insert-space-in-button="false"
 
        **照抄 React 版在 antdv 里是个无效属性，不报错也不生效**——
-       表现是「配了但没生效」，比完全没配更难查，因为你会认为「我明明配了」。
-       这是 04 对比文档「还没验证的三件事」第 2 条的现场，实测确认。
+       表现是「配了但没生效」，比完全没配更难查。实测确认。
   -->
   <ConfigProvider :locale="zhCN" :auto-insert-space-in-button="false">
-    <!-- VE-2.4：profile 拉不到时给可重试的错误页，而不是白屏 -->
+    <!--
+      VE-2.4：profile 拉不到时给可重试的错误页，而不是白屏。
+      ⚠️ 401 不排在这里——那是「你没登录」，是正常流程，由守卫送去登录页。
+    -->
     <Result
-      v-if="bootFailed"
+      v-if="bootError"
       status="warning"
       title="无法加载你的权限信息"
       sub-title="请检查网络后重试。在权限信息加载成功之前，系统不会展示任何业务界面。"
     >
       <template #extra>
-        <Button type="primary" :loading="isFetching" @click="refetch()">重试</Button>
+        <Button type="primary" :loading="retrying" @click="retryBoot">重试</Button>
       </template>
     </Result>
 
     <!--
-      VE-2.3：「还没问过后端」≠「确定未登录」。
+      VE-2.3 现在由**守卫**保证：status === 'unknown' 时守卫会 await profile，
+      导航根本不会完成，业务页面不会被创建。
 
-      这是「让默认状态是安全的」在前端的形态：**未知 ≠ 允许**。
-      看似「初始 perms 是空数组，恰好等价于无权限，先渲染也没事」——
-      这个侥幸才最危险：只要有人写出
-          perms.length === 0 ? 显示全部 : 按权限显示
-      （理由是「还没加载完就先都显示吧」），就会真的闪现越权内容。
-      干脆不渲染，就不存在这个口子。
-
-      ⚠️ vue-v0.5.0 起这一层会**同时**由导航守卫兜住（守卫里 await profile）。
-         两道并存不是重复：守卫管的是「导航」，这里管的是「首次挂载」。
+      这里保留 v-else 只是为了在引导失败时不同时渲染两套 UI。
     -->
-    <FullPageSpin v-else-if="auth.status === 'unknown'" tip="正在加载权限信息" />
-
     <RouterView v-else />
   </ConfigProvider>
 </template>

@@ -39,11 +39,17 @@ export function useLogout() {
       //
       // 第三条最容易漏，也最严重：这是跨用户数据泄露。
       //
-      // 🔴 到 vue-v0.5.0 会变成**五样**：再加 clearDynamicRoutes()
-      //    和 resetVersionWatcher()。
-      //    React 版永远只有四样（重建 router 天然清空动态路由）——
-      //    那是「增量 API」相对「重建 API」多欠的一笔债，
-      //    它的第一张账单就在这里。见 04 对比文档第 6 节。
+      // 📌 **原本以为这里要加第四样 clearDynamicRoutes()，实测发现不用。**
+      //
+      //    vue-v0.5.0 把「注册动态路由」做成了 auth.menus 的**派生效果**
+      //    （router/dynamic.ts 的 sync watcher）。auth.reset() 把 menus 清空，
+      //    watcher 立刻把路由移除——**和 React 版重建 router 的效果一样**。
+      //
+      //    > 「增量 API 多欠一笔债」是真的，但**债可以一次性还清**：
+      //    > 把命令式的 addRoute 包装成派生效果，就拿回了 React 的那个性质。
+      //    > 代价是你必须自己想到这一步——框架不会提示你。
+      //
+      //    ⚠️ resetVersionWatcher() 到 vue-v0.11.0 才会加进来。
       queryClient.clear()
       auth.reset()
       resetAuthRedirectGuard()
