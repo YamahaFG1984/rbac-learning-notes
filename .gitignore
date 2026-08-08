@@ -10,7 +10,7 @@ staticfiles/
 htmlcov/
 *.egg-info/
 
-# 前端
+# 前端（React，阶段三）
 frontend/node_modules/
 frontend/dist/
 frontend/.vite/
@@ -18,4 +18,16 @@ frontend/coverage/
 frontend/test-results/
 frontend/playwright-report/
 frontend/.auth/
+
+# 前端（Vue，阶段四）
+# ⚠️ 上面那组是带 frontend/ 前缀的，**不会**匹配到 frontend-vue/。
+#    以为「dist 已经忽略了」而漏掉这一组，产物就会进库——
+#    而 V-ADR-014 的整个理由就是不让几十个带 hash 的 chunk 淹没跨 tag 的 diff。
+frontend-vue/node_modules/
+frontend-vue/dist/
+frontend-vue/.vite/
+frontend-vue/coverage/
+frontend-vue/test-results/
+frontend-vue/playwright-report/
+frontend-vue/.auth/
 .cache/

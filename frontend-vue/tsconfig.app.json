@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* ⚠️ 与 React 版唯一的实质差异：jsx 从 "react-jsx" 换成 "preserve"。
+       Vue 的 SFC 由 vue-tsc 处理，这里只需要不干扰它。 */
+    "jsx": "preserve",
+    "jsxImportSource": "vue",
+
+    /* 路径别名，与 vite.config.ts 的 resolve.alias 保持一致。
+       TS 6 起 baseUrl 已弃用，paths 直接相对 tsconfig 所在目录解析。 */
+    "resolveJsonModule": true,
+    "paths": { "@/*": ["./src/*"] },
+
+    /* Linting */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "env.d.ts"]
+}

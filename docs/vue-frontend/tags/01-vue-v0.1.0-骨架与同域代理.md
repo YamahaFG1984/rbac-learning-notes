@@ -170,15 +170,67 @@ withCredentials: true,
 
 **这个坑与框架无关**，React 版注释里已经记过。照抄。
 
-### 5. `.gitignore` 要加两条
+### 5. `.gitignore` 要加一组
 
 ```
-frontend-vue/node_modules
-frontend-vue/dist
+frontend-vue/node_modules/
+frontend-vue/dist/
+frontend-vue/.vite/
+...
 ```
 
-⚠️ 检查一下 React 版当初是怎么写的——如果写的是 `frontend/dist`（带前缀），
-那 `frontend-vue/dist` **不会**被它匹配到。
+⚠️ 检查一下 React 版当初是怎么写的——📌 **实测：根 `.gitignore` 里写的是
+带前缀的 `frontend/dist/`，它不会匹配 `frontend-vue/dist/`。**
+以为「dist 已经忽略了」而漏掉这一组，产物就会进库，
+而 [V-ADR-014](../02-设计文档.md) 的整个理由就是不让几十个带 hash 的 chunk
+淹没跨 tag 的 diff。
+
+### 6. 🔴📌 **不要写 `app.use(Antd)`**（实测发现，原本不在计划里）
+
+几乎所有 Vue + Ant Design Vue 教程的第一行都是这个：
+
+```ts
+// ❌ 全局注册**所有**组件 → tree-shaking 完全失效
+import Antd from 'ant-design-vue'
+app.use(Antd)
+```
+
+**实测数据**（本 tag 只有一个占位页）：
+
+| | 内容 | `dist/assets` 合计 |
+| --- | --- | --- |
+| React（`fe-v1.0.0`） | **12 个页面、全部功能** | **1.24 MB** |
+| Vue（`app.use(Antd)`） | **一个占位页** | **1.53 MB** |
+| Vue（按需 import） | 一个占位页 | **0.51 MB** |
+
+**一个占位页比人家整个应用还大。**
+
+正确写法（`<script setup>` 里 import 的组件在模板里直接可用）：
+
+```vue
+<script setup lang="ts">
+import { Alert, Button, Card } from 'ant-design-vue'
+</script>
+<template>
+  <Button type="primary">提交</Button>
+</template>
+```
+
+⚠️ 代价是模板里写 `<Button>` 而不是 `<a-button>`，不那么「Vue 味」。
+
+**但 [V-ADR-002](../02-设计文档.md)（最小差异原则）要求这一处必须对齐 React 版的
+`import { Button } from 'antd'`**——否则 `vue-v1.0.0` 量出来的体积差异
+是「注册方式的差异」，不是「框架的差异」，
+**一个被自己的实验设计污染的结论。**
+
+> 📌 这个陷阱和 `queryKey` 必须 `computed`（`V-ADR-009`）、
+> 动态路由必须手动清理（`V-ADR-004`）是**同一类**：
+>
+> **框架给了两条路，其中一条更省事、更「地道」、文档里排在前面，
+> 而它在某个维度上是错的——且不报错。**
+>
+> React 在这三处都只给了一条路，**所以你没有机会走错**。
+> 详见 [04 对比文档第 16 节](../04-React与Vue3做法对比.md#16-ui-库的接入方式全局注册-vs-按需-import)。
 
 ---
 
@@ -257,14 +309,22 @@ diff -u frontend/src/api/client.ts frontend-vue/src/api/client.ts
 
 | 项 | 差异 |
 | --- | --- |
-| `vite.config.ts` | 🟢 **仅插件与端口** |
+| `vite.config.ts` | 🟢 **仅插件与端口**（实测 diff 4 行） |
 | `client.ts` | 🟢 **无差异**（逐字复制） |
-| `.gitignore` / `README` | 🟢 无差异（只是多一份） |
+| `.gitignore` / `README` | 🟢 无差异（只是多一组，⚠️ 前缀别漏） |
 | `main.ts` vs `main.tsx` | 🟡 同构：`createApp().use()` ↔ `createRoot().render()` |
 | 类型检查 | 🟡 `vue-tsc` ← `tsc` |
+| `tsconfig.app.json` | 🟡 只有 `jsx` 一项不同（`preserve` ← `react-jsx`） |
+| `env.d.ts` | 🔴 **Vue 需要 `declare module '*.vue'`**，React 不需要（`.tsx` 本来就是模块） |
+| **UI 库接入** | 🔴📌 **实测发现**：`app.use(Antd)` 让体积从 0.51 MB 涨到 1.53 MB（陷阱 6） |
 | **后端改动** | 🟢 **0**（React 阶段是 `fe-v0.2.0` 整整一个 tag） |
 
-**本 tag 的结论**：骨架层几乎完全与框架无关。
+**本 tag 的结论**：骨架层**基本**与框架无关——
+`vite.config.ts` 实测只差 4 行，`client.ts` 逐字相同。
+
+但它也给出了本阶段第一个**没预判到**的差异：**UI 库的接入方式**。
+它不在 `01-PRD.md` 第 1.3 节列的 6 条预判里，
+说明「预判清单」本身就是不完整的——这正是要真的写一遍的理由。
 
 ---
 
