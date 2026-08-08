@@ -28,7 +28,7 @@
 
 | 操作 | 文件 | 职责 |
 | --- | --- | --- |
-| 重写 | `src/auth/store.ts` | 加 `perms` / `menus` / `knownRoutes` / `can()` |
+| 修改 | `src/auth/store.ts` | 加 `can()`（`perms` / `menus` / `knownRoutes` 在 `vue-v0.2.0` 已就位，见那份规格书的「两处与初稿不同」） |
 | 新建 | `src/auth/useProfileQuery.ts` | vue-query 拉 profile → 写 store |
 | 新建 | `src/auth/usePermission.ts` | 唯一的权限判断函数 |
 | 新建 | `src/types/auth.ts` | `Profile` / `MenuNode` / `User` |

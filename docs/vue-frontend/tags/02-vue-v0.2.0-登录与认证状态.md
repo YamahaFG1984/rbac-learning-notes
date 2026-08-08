@@ -28,15 +28,41 @@
 | 操作 | 文件 | 职责 |
 | --- | --- | --- |
 | 新建 | `src/api/csrf.ts` | 读 cookie + 注入 `X-CSRFToken`（**从 React 版复制**） |
+| 新建 | `src/types/auth.ts` | `User` / `MenuNode` / `Profile` |
 | 新建 | `src/auth/api.ts` | `login` / `logout` / `fetchProfile` 请求函数 |
-| 新建 | `src/auth/store.ts` | Pinia store（**本 tag 只放 user / status**） |
+| 新建 | `src/auth/store.ts` | Pinia store |
+| 新建 | `src/auth/useAuth.ts` | `useLogin` / `useLogout` |
+| 新建 | `src/components/FullPageSpin.vue` | 全屏加载 |
 | 新建 | `src/pages/Login.vue` | 登录页 |
-| 修改 | `src/api/client.ts` | 挂 CSRF 拦截器 |
-| 修改 | `src/router/index.ts` | 加 `/login` 路由 |
-| 修改 | `src/App.vue` | `<a-config-provider>` |
+| 修改 | `src/api/client.ts` | 挂 CSRF 拦截器 + 401 跳转钩子 |
+| 修改 | `src/router/index.ts` | 加 `/login` 路由 + **最小认证守卫** |
+| 修改 | `src/main.ts` | `VueQueryPlugin` |
+| 修改 | `src/App.vue` | `<ConfigProvider>` |
 
-> ⚠️ **本 tag 的 store 里不要放 `perms` / `menus`。** 那是 `vue-v0.4.0` 的事。
-> 现在只需要「登没登录」和「登录的是谁」。
+### 📌 两处与规格书初稿不同的地方（已按 V-ADR-002 修正）
+
+**1. store 的字段与 React 版 `fe-v0.3.0` 保持同形**
+
+初稿写的是「本 tag 只放 user / status，`perms`/`menus` 是 `vue-v0.4.0` 的事」。
+**改掉了**：React 版 `fe-v0.3.0` 的 store 里就有 `perms` / `menus`
+（登录接口返回的本来就是完整 profile，存下来零成本），
+而 [V-ADR-002](../02-设计文档.md) 要求控制变量——
+两边 store 在同一阶段形状不同的话，`vue-v0.4.0` 的 diff 讲的故事
+就和 `fe-v0.6.0` 的 diff 对不上了。
+
+所以本 tag 的 store 直接是最终形状，`vue-v0.4.0` 只加 `can()` 和查询层。
+
+**2. `types/auth.ts` 一步到位，不分两次长出来**
+
+React 版的 `MenuNode` 在 `fe-v0.3.0` 只有 `{id, name, icon, url, permType, children}`，
+到 `fe-v0.5.0` 才长出 `routePath` / `component` / `permCode`，`Profile` 才长出 `knownRoutes`
+——因为那些字段是它自己在 `fe-v0.5.0` 加到后端的。
+
+**Vue 版拿到的是已经完成的 API 契约**，类型应该如实描述接口返回什么。
+
+> 📌 这是「两个 tag 消失了」的一个具体侧面：
+> 消失的不只是工作量，还有**「类型定义分两次长出来」这个过程本身**。
+> 接第三个前端时，契约是**给定的**而不是**协商出来的**。
 
 ---
 
@@ -165,26 +191,85 @@ message.error(err.response?.data?.detail ?? '登录失败')
 后端已经保证不区分「用户不存在」和「密码错误」（`VE-1.7`）。
 前端硬编码等于把这个安全设计架空了一半。
 
-### 7. 第一节第 4 问：登出要清四样
+### 7. 🔴📌 第一节第 4 问：登出要清三样，**外加一次显式跳转**
 
 ```ts
-async function doLogout() {
-  await logout()                    // 1. 后端清 session
-  auth.reset()                      // 2. store 复位
-  queryClient.clear()               // 3. ⚠️ Query 缓存里还有上个用户的数据
-  resetVersionWatcher()             // 4. ⚠️ 见 vue-v0.11.0
-  router.replace('/login')
+onSettled: async () => {
+  queryClient.clear()          // 1. ⚠️ 否则下一个用户会看到上一个用户的数据
+  auth.reset()                 // 2. store 复位
+  resetAuthRedirectGuard()     // 3. 401 去重标志复位
+  await router.replace('/login')   // 🔴 4. **这一行 React 版没有**
 }
 ```
 
-⚠️ **还差第五样，但它到 `vue-v0.5.0` 才存在**：`clearDynamicRoutes()`。
-本 tag 还没有动态路由，先不写——但记住这里将来要加。
+**第 4 行是实测逼出来的。** 不加的话：
 
-> 📌 React 版的登出只有四步，**永远不需要第五步**。
-> 这就是 [04 对比文档第 6 节](../04-React与Vue3做法对比.md#6-动态路由注册重建-vs-增量)
-> 说的「增量 API 多欠的那笔债」，它的第一张账单在这里。
+```
+登出 → session 清了、store 清了、cookie 也没了
+     → 但用户**仍然停在原页面上**，界面还是登录态的壳
+```
 
-### 8. `status` 三态，不是布尔
+根因是 [V-ADR-005](../02-设计文档.md) 的另一面——**它在初稿里被漏掉了**：
+
+| | React | Vue |
+| --- | --- | --- |
+| 守卫是什么 | **组件**（`RequireAuth`），在渲染树里 | **导航流程的一环**（`beforeEach`） |
+| `status` 变 `anonymous` 时 | 重新渲染 → `<Navigate>` **自动生效** | **没有导航发生 → 守卫根本不会运行** |
+| 要写跳转代码吗 | ❌ 不需要 | ✅ **必须** |
+
+> **React 的守卫是「状态的函数」，Vue 的守卫是「导航的钩子」。**
+> 前者对状态变化天然响应，后者只在有人导航时才醒来。
+
+→ 硬规则：**凡是「状态变了所以该换页面」的场景，Vue 都必须自己发起导航。**
+
+⚠️ 这顺带解释了 401 为什么必须**注入一个跳转回调**而不能只清 store——**同一个原因**。
+
+⚠️ **还有两样到后续 tag 才存在**：
+`clearDynamicRoutes()`（`vue-v0.5.0`）和 `resetVersionWatcher()`（`vue-v0.11.0`）。
+本 tag 先不写。
+
+> 📌 到 `vue-v0.11.0` 时 Vue 版的登出会有**六件事**，React 版只有**四件**。
+> 多出来的两件各有出处：
+> - `clearDynamicRoutes()` ← 增量路由 API（[第 6 节](../04-React与Vue3做法对比.md#6-动态路由注册重建-vs-增量)）
+> - `router.replace('/login')` ← 导航期守卫（[第 7 节](../04-React与Vue3做法对比.md#7-路由守卫渲染期-vs-导航期)）
+>
+> **两件都不是「Vue 更麻烦」，都是某个「拦得更早/更省事」的选择的账单。**
+
+### 8. 🔴 认证守卫的落点：Vue 从这里就开始不一样了
+
+React 版 `fe-v0.3.0` 用的是**组件**：
+
+```tsx
+<Route path="/" element={<RequireAuth><Home /></RequireAuth>} />
+```
+
+Vue 版用**导航守卫**——[V-ADR-005](../02-设计文档.md) 的雏形已经出现在本 tag：
+
+```ts
+// ⚠️ 本 tag 只做「登没登录」，**刻意不管权限**。
+//    权限判断 + profile 预加载 + 动态路由是 vue-v0.5.0 的 guard.ts。
+//    两者职责分开，否则以后改一个会意外影响另一个。
+router.beforeEach((to) => {
+  if (to.path === '/login') return true
+  const auth = useAuthStore()
+  if (auth.status === 'anonymous') {
+    return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  return true
+})
+```
+
+⚠️ 注意这里**没有**处理 `status === 'unknown'`——本 tag 的 profile 预加载
+还在 `App.vue` 里（对应 React 的 `useBootstrapAuth`），
+`unknown` 时直接放行，由页面自己显示 loading。
+
+**`vue-v0.5.0` 会把这一段整个重写**：`unknown` 时在守卫里 `await` profile，
+然后 `addRoute` + `return { ...to, replace: true }`。
+
+> 📌 这是本阶段的一条暗线：**同一个职责，React 放在组件树里，Vue 放在导航流程里。**
+> 差异从 `fe-v0.3.0` ↔ `vue-v0.2.0` 就开始了，到 `vue-v0.5.0` 完全展开。
+
+### 9. `status` 三态，不是布尔
 
 ```ts
 const status = ref<'unknown' | 'authenticated' | 'anonymous'>('unknown')
@@ -286,15 +371,24 @@ diff -u frontend/src/auth/api.ts   frontend-vue/src/auth/api.ts     # 期望：�
 | --- | --- |
 | `csrf.ts` | 🟢 **逐字相同** |
 | `auth/api.ts` | 🟢 **逐字相同** |
-| 登出清理项 | 🟡 现在相同；`vue-v0.5.0` 起 Vue **多一项** |
+| `types/auth.ts` | 🟡 内容相同，但 Vue **一步到位**（React 分 `fe-v0.3.0`/`fe-v0.5.0` 两次长出来） |
+| store 形状 | 🟢 **相同**（V-ADR-002 要求对齐） |
 | `status` 三态 | 🟢 决策相同，Vue 多一条独立理由 |
-| 登录表单 | 🟡 `v-model` ← 受控组件 + `Form.useForm()` |
-| loading / error | 🟢 都用 `useMutation`，`onSuccess` 两边都可用 |
+| 登录表单 | 🟡 `v-model:value` ← 受控组件 + `Form.useForm()` |
+| loading / error | 🟢 都用 `useMutation`；⚠️ Vue 侧要写 `.value`（`login.isPending.value`） |
+| 「已登录就跳走」 | 🟡 `watch` + `immediate` ← `useEffect` + 依赖数组 |
+| 认证守卫落点 | 🔴 `router.beforeEach` ← `<RequireAuth>` 组件 |
+| **登出后的跳转** | 🔴🔴 **Vue 必须显式 `router.replace`，React 不需要**（陷阱 7，实测发现） |
 | `ConfigProvider` | 🔴 **API 位置不同**（`auto-insert-space-in-button` ← `button={{...}}`）。⚠️ 这是 **UI 库版本世代**差异，不是 Vue/React 差异 |
+| `Spin` 的提示 prop | 🔴 `tip` ← `description`（同上，版本世代） |
 | **后端改动** | 🟢 **0**（React 阶段这里前面有整整一个 `fe-v0.2.0`） |
 
-**本 tag 的结论**：认证层的差异只在「表单怎么绑值」这一处，
-而**传输、CSRF、安全语义全部逐字复用**。
+**本 tag 的结论**：传输层（`csrf.ts` / `auth/api.ts`）**逐字复用**，
+安全语义（httpOnly、不存 token、400 不是 401、开放重定向防护）**完全一致**。
+
+真正的差异只有一处，而且**不在计划里**：
+**认证守卫从组件挪到导航流程后，「状态变化」不再自动触发重定向。**
+这是 `V-ADR-005` 初稿漏掉的代价，已回填设计文档与 04 对比文档第 7 节。
 
 ---
 
