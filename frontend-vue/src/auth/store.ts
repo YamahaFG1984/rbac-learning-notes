@@ -1,7 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+import type { PermCode } from '@/constants/permissions'
 import type { MenuNode, Profile, User } from '@/types/auth'
+
+/** 超管的通配。**只在本文件处理一次**——<Can>、路由守卫、菜单都调 can()。 */
+const WILDCARD = '*'
 
 /**
  * 认证与权限状态。
@@ -34,6 +38,20 @@ export const useAuthStore = defineStore('auth', () => {
   const knownRoutes = ref<string[]>([])
   const status = ref<'unknown' | 'authenticated' | 'anonymous'>('unknown')
 
+  /**
+   * 唯一的权限判断实现。
+   *
+   * ⚠️ 放在 store 里而不是 composable 里，是因为**导航守卫也要用**——
+   *    守卫在组件外，拿不到 composable 的组件上下文。
+   *    `usePermission()` 只是它的一层薄封装，不重复实现判断逻辑。
+   *
+   *    🟡 React 版把它放在 `usePermission` 这个 hook 里就够了，
+   *       因为它的守卫（`<PermissionGate>`）在组件树内部。
+   *       **「守卫在组件外」这一条差异，一路影响到了判断函数放哪。**
+   */
+  const can = (code: PermCode) =>
+    perms.value.includes(WILDCARD) || perms.value.includes(code)
+
   function setProfile(profile: Profile) {
     user.value = profile.user
     perms.value = profile.perms
@@ -53,7 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
     status.value = 'anonymous'
   }
 
-  return { user, perms, menus, knownRoutes, status, setProfile, reset }
+  return { user, perms, menus, knownRoutes, status, can, setProfile, reset }
 })
 
 /*

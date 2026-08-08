@@ -55,7 +55,8 @@ const app = createApp(App)
  *
  *    顺序写反的报错是
  *        getActivePinia() was called with no active Pinia
- *    ——看起来像忘了装 pinia，实际是**注册顺序**问题。
+ *    ⚠️ 实测：Pinia 4 的报错明确写着 "before calling app.use(pinia)"，
+ *       直接指向时机问题。表现是整页白屏——**失败得很响**。
  *
  *    这是 V-ADR-003 那类问题的现场：Pinia 的 store 绑在 app 实例上，
  *    而 React 版的 Zustand 是模块级单例，

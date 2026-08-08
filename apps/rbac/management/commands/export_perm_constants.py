@@ -28,6 +28,19 @@ HEADER = """// ⚙️ 此文件由 `python manage.py export_perm_constants` 生�
 """
 
 
+#: 默认输出路径。
+#
+# ⚠️ **它必须保持原样。**
+#
+#    React 版的 CI（.github/workflows/ci.yml）、frontend/CLAUDE.md 和
+#    tests/rbac/test_sync_permissions.py 都是无参数调用。
+#    改默认值会让**上一个阶段的 CI 变红**（VAC-10）。
+#
+#    「给一个已有命令加能力时，不改变现有调用的行为」是最低要求——
+#    这条在给 sync_permissions 加 --check-templates 时用过一次，形状完全一样。
+DEFAULT_OUT = "frontend/src/constants/permissions.ts"
+
+
 class Command(BaseCommand):
     help = "把权限码导出为前端 TS 常量"
 
@@ -36,6 +49,15 @@ class Command(BaseCommand):
             "--check",
             action="store_true",
             help="只校验现有文件是否与数据库一致，不写入（CI 用）",
+        )
+        parser.add_argument(
+            "--out",
+            default=DEFAULT_OUT,
+            help=(
+                "输出路径（相对 BASE_DIR）。"
+                "接第三个前端（Vue，阶段四）时才需要——默认值保持不变，"
+                "所以 React 版的 CI 与测试一行都不用改。"
+            ),
         )
 
     def handle(self, *args, **options):
@@ -62,23 +84,25 @@ class Command(BaseCommand):
         ]
         content = "\n".join(lines)
 
-        target = Path(settings.BASE_DIR, "frontend/src/constants/permissions.ts")
+        out = options["out"]
+        target = Path(settings.BASE_DIR, out)
 
         if options["check"]:
             current = target.read_text(encoding="utf-8") if target.exists() else ""
             if current != content:
+                # ⚠️ 报错里带上实际路径和实际参数。有两个前端之后，
+                #    「哪一个不一致」是排查时第一个要知道的事。
+                suffix = "" if out == DEFAULT_OUT else f" --out {out}"
                 self.stdout.write(
                     self.style.ERROR(
-                        "frontend/src/constants/permissions.ts 与后端权限点不一致。\n"
-                        "请运行 `python manage.py export_perm_constants` 后提交。"
+                        f"{out} 与后端权限点不一致。\n"
+                        f"请运行 `python manage.py export_perm_constants{suffix}` 后提交。"
                     )
                 )
                 raise SystemExit(1)
-            self.stdout.write(self.style.SUCCESS("权限常量与后端一致"))
+            self.stdout.write(self.style.SUCCESS(f"权限常量与后端一致（{out}）"))
             return
 
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        self.stdout.write(
-            self.style.SUCCESS(f"已写入 {target.name}（{len(rows)} 个权限码）")
-        )
+        self.stdout.write(self.style.SUCCESS(f"已写入 {out}（{len(rows)} 个权限码）"))

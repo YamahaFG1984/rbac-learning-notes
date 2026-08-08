@@ -1,59 +1,42 @@
 <script setup lang="ts">
-import { useQuery } from '@tanstack/vue-query'
-import { ConfigProvider } from 'ant-design-vue'
+import { Button, ConfigProvider, Result } from 'ant-design-vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
-import { computed, watch } from 'vue'
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { setUnauthenticatedHandler } from '@/api/client'
-import { fetchProfile } from '@/auth/api'
 import { useAuthStore } from '@/auth/store'
+import { useProfileQuery } from '@/auth/useProfileQuery'
+import FullPageSpin from '@/components/FullPageSpin.vue'
 
 /**
  * 应用启动时问一次后端「我登录了吗」。
  *
  * 前端不保存 token——它靠这一次请求判断认证状态（F-ADR-002/003）。
- * vue-v0.4.0 会把它换成正式的 useProfileQuery 并接进权限判断，
- * vue-v0.5.0 再把触发时机挪到导航守卫里。
+ *
+ * ⚠️ vue-v0.5.0 会把触发时机整个挪到导航守卫里
+ *    （那时才需要「profile 到手后再 addRoute」的时序）。
  */
 const auth = useAuthStore()
 const router = useRouter()
 
-const { data, isError } = useQuery({
-  // ⚠️ 即使没有参数也写 computed（V-ADR-009）。
-  //    「现在没参数」会变成「以后加了参数」，而加参数的人不会想到
-  //    还要改 queryKey 的形式。统一写法把陷阱从「需要记住」变成「不可能踩到」。
-  queryKey: computed(() => ['profile']),
-  queryFn: fetchProfile,
-  retry: false,
-  staleTime: Infinity,
-})
+const { error, isError, isFetching, refetch } = useProfileQuery()
 
 /*
- * 🟡 对照 React 版的 useEffect：
+ * ⚠️ **401 不是错误。**
  *
- *      useEffect(() => {
- *        if (query.data) setProfile(query.data)
- *        else if (query.isError) reset()
- *      }, [query.data, query.isError, setProfile, reset])
+ *    未登录用户拉 profile 拿到 401 是完全正常的流程——此时应该正常渲染，
+ *    让路由守卫把他送去登录页。只有网络错误 / 5xx 才该显示错误页（VE-2.4）。
  *
- *    Vue 的 watch 不需要依赖数组——它追踪的是回调里实际读到的响应式值。
- *
- *    ⚠️ 但 immediate: true 不能少：缓存命中时 data 一开始就有值，
- *       不加的话 watch 不会触发，store 永远是空的。
- *
- *    📌 fe-v0.13.0 在这个位置踩过一个坑（await refetch() 之后 store 还没更新，
- *       因为 useEffect 要等重新渲染才跑）。**watch 有没有同样的窗口？**
- *       到 vue-v0.11.0 实测，回填 04 对比文档第 11 节。
+ *    🟡 React 版这段逻辑在 <AuthBootstrap> 组件里，Vue 版直接放在 App 的
+ *       setup + template 里。**判断逻辑逐字相同，只是落点不同**——
+ *       React 需要一个组件来「包住 children 并决定渲不渲染」，
+ *       Vue 用 v-if 就够了。
  */
-watch(
-  [data, isError],
-  ([profile, errored]) => {
-    if (profile) auth.setProfile(profile)
-    else if (errored) auth.reset()
-  },
-  { immediate: true },
+const httpStatus = computed(
+  () => (error.value as { response?: { status?: number } } | null)?.response?.status,
 )
+const bootFailed = computed(() => isError.value && httpStatus.value !== 401)
 
 /**
  * 把「会话过期怎么办」注入 axios 拦截器——避免 api 层直接依赖路由。
@@ -120,6 +103,33 @@ setUnauthenticatedHandler(() => {
        这是 04 对比文档「还没验证的三件事」第 2 条的现场，实测确认。
   -->
   <ConfigProvider :locale="zhCN" :auto-insert-space-in-button="false">
-    <RouterView />
+    <!-- VE-2.4：profile 拉不到时给可重试的错误页，而不是白屏 -->
+    <Result
+      v-if="bootFailed"
+      status="warning"
+      title="无法加载你的权限信息"
+      sub-title="请检查网络后重试。在权限信息加载成功之前，系统不会展示任何业务界面。"
+    >
+      <template #extra>
+        <Button type="primary" :loading="isFetching" @click="refetch()">重试</Button>
+      </template>
+    </Result>
+
+    <!--
+      VE-2.3：「还没问过后端」≠「确定未登录」。
+
+      这是「让默认状态是安全的」在前端的形态：**未知 ≠ 允许**。
+      看似「初始 perms 是空数组，恰好等价于无权限，先渲染也没事」——
+      这个侥幸才最危险：只要有人写出
+          perms.length === 0 ? 显示全部 : 按权限显示
+      （理由是「还没加载完就先都显示吧」），就会真的闪现越权内容。
+      干脆不渲染，就不存在这个口子。
+
+      ⚠️ vue-v0.5.0 起这一层会**同时**由导航守卫兜住（守卫里 await profile）。
+         两道并存不是重复：守卫管的是「导航」，这里管的是「首次挂载」。
+    -->
+    <FullPageSpin v-else-if="auth.status === 'unknown'" tip="正在加载权限信息" />
+
+    <RouterView v-else />
   </ConfigProvider>
 </template>

@@ -152,7 +152,7 @@ Vue 版的 Vite proxy 配置与 React 版**逐字相同**——这本身就是�
 > Pinia 的 store 绑在 `app` 实例上，`useAuthStore()` 在 `app.use(pinia)` 执行之前调用会抛：
 >
 > ```
-> getActivePinia() was called with no active Pinia. Did you forget to install pinia?
+> [🍍]: "getActivePinia()" was called but there was no active Pinia. Are you trying to use a store before calling "app.use(pinia)"?
 > ```
 >
 > 而 `api/client.ts` 的拦截器是**模块加载时就执行**的。这个时序必须显式处理。

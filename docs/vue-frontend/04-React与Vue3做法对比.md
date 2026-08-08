@@ -261,7 +261,7 @@ Zustand 的 store 是模块级单例，`getState()` 是纯函数调用。**不�
 ```ts
 // ❌ 模块顶层执行 → 此时 app.use(pinia) 还没跑
 const auth = useAuthStore()
-// getActivePinia() was called with no active Pinia. Did you forget to install pinia?
+// [🍍]: "getActivePinia()" was called but there was no active Pinia. Are you trying to use a store before calling "app.use(pinia)"?
 
 client.interceptors.request.use((config) => {
   config.headers['X-CSRFToken'] = auth.csrfToken
@@ -277,7 +277,8 @@ client.interceptors.request.use((config) => {
 //    这个文件在 main.ts 里被 import，而那时 app.use(pinia) 还没执行。
 //    提到顶层的表现是应用直接白屏，报错是
 //    「getActivePinia() was called with no active Pinia」——
-//    报错信息看起来像「忘了装 pinia」，实际是**调用时机**问题。
+//    ⚠️ 实测：Pinia 4 的报错**明确指向了时机**（"before calling app.use(pinia)"），
+//       比预想的有帮助。表现是整页白屏——失败得很响，容易修。
 client.interceptors.request.use((config) => {
   const auth = useAuthStore()      // 拦截器**执行**时，app 早已挂载
   ...

@@ -116,7 +116,7 @@ const { perms } = storeToRefs(useAuthStore())   // perms 是 Ref
 // ❌ src/api/client.ts 模块顶层
 import { useAuthStore } from '@/auth/store'
 const auth = useAuthStore()
-// getActivePinia() was called with no active Pinia. Did you forget to install pinia?
+// [🍍]: "getActivePinia()" was called but there was no active Pinia. Are you trying to use a store before calling "app.use(pinia)"?
 ```
 
 `client.ts` 在 `main.ts` 里被 import，而那时 `app.use(pinia)` 还没执行。
@@ -128,8 +128,9 @@ const auth = useAuthStore()
 client.interceptors.request.use((config) => {
   // ⚠️ useAuthStore() **必须**写在这里，不能提到模块顶层。
   //    本文件在 main.ts 里被 import，那时 app.use(pinia) 还没跑。
-  //    提到顶层的表现是应用白屏，报错说「忘了装 pinia」——
-  //    而实际是**调用时机**问题。
+  //    提到顶层的表现是**整页白屏**。
+  //    ⚠️ 实测：Pinia 4 的报错明确写着 "before calling app.use(pinia)"，
+  //       直接指向时机问题——失败得很响，容易修。
   const auth = useAuthStore()
   ...
 })
@@ -307,14 +308,45 @@ diff -u frontend/src/constants/permissions.ts frontend-vue/src/constants/permiss
 | --- | --- |
 | store 定义 | 🔴 `defineStore` + `ref` ← `create` + `set` |
 | 组件里读 | 🔴 `storeToRefs` / 直接 `auth.x` ← selector 函数 |
-| **组件外读** | 🔴🔴 **Vue 独有的时序问题**（`VE-2.6` / `V-ADR-003`） |
+| **组件外读** | 🔴🔴 **Vue 独有的时序问题**（`VE-2.6` / `V-ADR-003`），实测确认 |
 | 忘了细化订阅/解构 | 🔴 **失误方向相反**：React 是性能，Vue 是正确性 |
-| 权限判断函数 | 🟡 同构；Vue 不需要 `useCallback` |
+| **`can()` 放哪** | 🔴📌 **Vue 放 store 里，React 放 hook 里**（见下，实测才想清楚） |
+| **`fetchProfileIntoStore()`** | 🔴📌 **Vue 独有的命令式路径**（见下） |
+| 权限判断函数 | 🟡 同构；Vue 不需要 `useCallback`，但调用方必须 `computed` |
 | `queryKey` | 🔴 必须 `computed`（`V-ADR-009`） |
-| Query → store | 🟡 `watch` ← `useEffect`（**时序是否等价待验证**） |
+| Query → store | 🟡 `watch` ← `useEffect`（**时序是否等价待 `vue-v0.11.0` 验证**） |
+| `AuthBootstrap` | 🟡 React 是**组件**，Vue 用 `v-if` 就够了；判断逻辑逐字相同 |
 | 三态 status | 🟢 决策相同，Vue 多一条独立理由 |
-| 权限常量文件 | 🟢 **内容逐字节相同**（同一个生成器） |
-| 后端改动 | 🟡 ~20 行（React 阶段是整整一个 tag） |
+| 权限常量文件 | 🟢 **逐字节相同**（实测 `diff` 为空） |
+| 后端改动 | 🟡 **两个文件、约 20 行**（React 阶段是整整一个 `fe-v0.5.0`） |
+
+### 📌 两处实测才想清楚的差异
+
+**1. `can()` 为什么放在 store 里而不是 composable 里**
+
+React 版把判断逻辑放在 `usePermission` 这个 hook 里就够了——
+因为它的路由守卫（`<PermissionGate>`）**在组件树内部**，拿得到 hook。
+
+Vue 的守卫在**组件外**（`router.beforeEach`），拿不到 composable 的组件上下文。
+所以判断逻辑必须下沉到 store，`usePermission()` 只是一层薄封装。
+
+> **「守卫在组件外」这一条差异，一路影响到了「判断函数放哪」。**
+> 一个看起来只关乎路由的决策（V-ADR-005），实际决定了权限内核在前端的位置。
+
+**2. `fetchProfileIntoStore()` —— React 没有的一条路径**
+
+React 的 profile 拉取只有一条路径：`<AuthBootstrap>` 里的 `useProfileQuery`。
+Vue 需要**两条**：
+
+| 路径 | 谁用 | 为什么 |
+| --- | --- | --- |
+| `useProfileQuery()`（composable） | `App.vue` | 首次挂载，走 Query 缓存 |
+| `fetchProfileIntoStore()`（命令式） | `vue-v0.5.0` 的守卫 | **守卫里没有组件实例，`useQuery` 用不了** |
+
+⚠️ 两条路径写同一个 store，正好撞上「唯一写入口」那条规则。
+本项目的处理是：**两条都只经过 `auth.setProfile`**，
+且都在 `auth/` 目录内——「唯一写入口」约束的是**谁能调 setProfile**，
+不是「只能有一个调用点」。这个区别要写清楚，否则下一个人会以为规则被破坏了。
 
 **本 tag 是本阶段差异最集中的地方之一**——[04 对比文档](../04-React与Vue3做法对比.md)
 总账里「真正 Vue 特有的 6 条决策」，有 3 条在这个 tag 里

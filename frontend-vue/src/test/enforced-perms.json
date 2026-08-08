@@ -1,0 +1,27 @@
+{
+  "_comment": "由 `python manage.py export_enforced_perms` 生成，请勿手工编辑。内容是服务端实际用于权限判断的权限码。",
+  "enforced": [
+    "system:audit:view",
+    "system:dept:create",
+    "system:dept:delete",
+    "system:dept:update",
+    "system:dept:view",
+    "system:perm:view",
+    "system:role:assign_perm",
+    "system:role:create",
+    "system:role:delete",
+    "system:role:update",
+    "system:role:view",
+    "system:user:assign_role",
+    "system:user:create",
+    "system:user:delete",
+    "system:user:update",
+    "system:user:view",
+    "ticket:ticket:assign",
+    "ticket:ticket:create",
+    "ticket:ticket:delete",
+    "ticket:ticket:export",
+    "ticket:ticket:update",
+    "ticket:ticket:view"
+  ]
+}

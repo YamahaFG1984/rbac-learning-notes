@@ -149,7 +149,8 @@ router 一旦 `use`，首次导航可能立刻触发守卫——那时 pinia 必
 
 ⚠️ **这个 bug 在本 tag 不会暴露**（还没有守卫），到 `vue-v0.5.0` 才炸，
 到时候报错是 `getActivePinia() was called with no active Pinia`，
-**看起来像忘了装 pinia，实际是注册顺序问题**。现在就写对。
+⚠️ 实测确认：Pinia 4 的报错**明确写着 "before calling app.use(pinia)"**，
+直接指向时机而不是「忘了装」。表现是整页白屏。现在就写对。
 
 ### 3. `client.ts` 直接复制，但**别急着加 store 相关的代码**
 

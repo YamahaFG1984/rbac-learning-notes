@@ -67,6 +67,10 @@ def collect_enforced_codes() -> set[str]:
     return codes
 
 
+#: 默认输出路径。⚠️ 必须保持原样，理由同 export_perm_constants.DEFAULT_OUT。
+DEFAULT_OUT = "frontend/src/test/enforced-perms.json"
+
+
 class Command(BaseCommand):
     help = "导出服务端实际校验的权限码清单（供前端结构性测试对账）"
 
@@ -75,6 +79,11 @@ class Command(BaseCommand):
             "--check",
             action="store_true",
             help="只校验现有文件是否最新，不写入（CI 用）",
+        )
+        parser.add_argument(
+            "--out",
+            default=DEFAULT_OUT,
+            help="输出路径（相对 BASE_DIR）。默认值保持不变，见 DEFAULT_OUT 的说明。",
         )
 
     def handle(self, *args, **options):
@@ -88,23 +97,23 @@ class Command(BaseCommand):
         }
         content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
 
-        target = Path(settings.BASE_DIR, "frontend/src/test/enforced-perms.json")
+        out = options["out"]
+        target = Path(settings.BASE_DIR, out)
 
         if options["check"]:
             current = target.read_text(encoding="utf-8") if target.exists() else ""
             if current != content:
+                suffix = "" if out == DEFAULT_OUT else f" --out {out}"
                 self.stdout.write(
                     self.style.ERROR(
-                        "frontend/src/test/enforced-perms.json 已过期。\n"
-                        "请运行 `python manage.py export_enforced_perms` 后提交。"
+                        f"{out} 已过期。\n"
+                        f"请运行 `python manage.py export_enforced_perms{suffix}` 后提交。"
                     )
                 )
                 raise SystemExit(1)
-            self.stdout.write(self.style.SUCCESS("服务端校验清单是最新的"))
+            self.stdout.write(self.style.SUCCESS(f"服务端校验清单是最新的（{out}）"))
             return
 
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
-        self.stdout.write(
-            self.style.SUCCESS(f"已写入 {target.name}（{len(codes)} 个权限码）")
-        )
+        self.stdout.write(self.style.SUCCESS(f"已写入 {out}（{len(codes)} 个权限码）"))
