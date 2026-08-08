@@ -155,7 +155,87 @@ const HARDCODED_MENUS = [
 
 ⚠️ `:delay="200"` 不能少——不加的话每次导航都闪一下 spinner，比不加还难受。
 
-### 6. `Spin` 的提示文案：antdv 用 `tip`
+### 6. 🔴📌 父路由有 `name`，空路径子路由**必须也有 `name`**（实测踩到）
+
+```ts
+{
+  path: '/',
+  name: 'layout',                 // vue-v0.5.0 的 addRoute('layout', ...) 要用
+  children: [
+    { path: '', redirect: '/tickets' },      // ❌ 登录后停在原地
+    { path: '', name: 'home', redirect: '/tickets' },  // ✅
+  ],
+}
+```
+
+**症状**：登录成功（接口 200、store 也更新了），但**页面停在登录页**，
+看起来像「按钮点了没反应」。
+
+**原因**：导航到 `/` 时命中的是**父路由的 name**，空路径子路由不会被渲染。
+Vue Router 5 会打一条警告说明这件事：
+
+```
+[VUE_ROUTER_R0103] The route named "layout" has a child without a name,
+an empty path, and no children. Using that name won't render the empty path child…
+```
+
+⚠️ **它只是 `console.warn`，不会让任何东西失败**，很容易被忽略——
+而症状（登录没反应）和原因（路由命名）离得非常远。
+
+> 📌 这个坑的成因很有意思：**父路由的 `name` 是为 `vue-v0.5.0` 准备的**
+> （`addRoute` 必须能指名道姓地找到父节点），
+> 而它在**当下**制造了一个 bug。
+>
+> React Router 不需要给节点起名——它的动态路由是「重新构造整棵树」，
+> 父子关系由 JSX 嵌套表达。**「增量 API 需要节点有身份」这个要求，
+> 顺带带来了一类 React 不会有的错误。**
+
+### 7. 🔴📌 antdv 的 `Menu` **没有** `defaultOpenKeys`（实测踩到）
+
+React（antd 6）：
+
+```tsx
+<Menu defaultOpenKeys={['ticket', 'system', 'monitor']} ... />
+```
+
+照抄成 `:default-open-keys="[...]"` 在 antdv 里是个**未声明的 prop**——
+它会掉进 `$attrs` 落到根元素上，**不报错、不警告、也不生效**。
+
+**症状**：所有子菜单默认收起。「部门管理」在 DOM 里但不可见——
+E2E 点不到才暴露，肉眼扫一眼页面很容易以为「设计如此」。
+
+**修正**：antdv 只提供受控的 `openKeys`，非受控的默认值要自己给初始值。
+
+```vue
+<script setup lang="ts">
+const openKeys = ref<string[]>(['ticket', 'system', 'monitor'])
+</script>
+<template>
+  <Menu v-model:open-keys="openKeys" ... />
+</template>
+```
+
+⚠️ 这也正好是 `vue-v0.6.0` 要的形态（那里要做「自动展开当前项的父目录，
+但不覆盖用户手动折叠」的并入逻辑）。
+
+> 📌 **这已经是本阶段第 4 次「照抄 React 版写出无效属性」**：
+>
+> | tag | 位置 | 类型 |
+> | --- | --- | --- |
+> | `vue-v0.2.0` | `ConfigProvider` 的 `autoInsertSpace` | 换了名字 |
+> | `vue-v0.2.0` | `Spin` 的 `tip` / `description` | 换了名字 |
+> | `vue-v0.3.0` | `Menu` 的 `defaultOpenKeys` | **能力压根不存在** |
+> | `vue-v0.10.0` | `Modal` 的 `destroyOnClose` | 换了名字（尚未遇到） |
+>
+> **共同点：Vue 的模板对未知属性是宽容的**（透传到 `$attrs`），
+> 而 React 的 TSX 对未知 prop 会**编译期报错**。
+>
+> 这是 JSX 相对模板在这一点上实打实的优势，
+> 与「Vue vs React 谁更好」无关——**它只是类型检查边界的位置不同**。
+> ⚠️ 也要看到反面：正因为宽容，Vue 的模板才能把任意属性透传给子组件，
+> 这在封装第三方组件时省掉大量样板。
+
+### 8. `Spin` 的提示文案：antdv 用 `tip`
 
 ```vue
 <!-- ✅ antdv 4 -->
@@ -237,14 +317,28 @@ const ui = useUiStore()
 | --- | --- |
 | 布局结构 | 🟢 **无差异**（同一套 antd Layout 组件） |
 | 嵌套路由 | 🟡 同构：`children` + `<RouterView>` ← `<Route>` 嵌套 + `<Outlet>` |
-| 兜底路由语法 | 🟡 `'/:pathMatch(.*)*'` ← `path="*"`（Vue 更容易写错） |
-| 折叠状态 | 🟡 `v-model:collapsed` ← 受控 prop + onChange |
-| `uiStore` | 🟡 Pinia ← Zustand |
+| 兜底路由语法 | 🟡 `':pathMatch(.*)*'` ← `path="*"`（Vue 更容易写错） |
+| 折叠状态 | 🟡 `ui.toggleSider()` ← 受控 prop + onChange |
+| `uiStore` 持久化 | 🟡 手写 5 行 ← Zustand 自带 `persist` 中间件 |
+| `PageContainer` 的复用 | 🟡 插槽 ← `children` + `extra` prop（模板版是继承，三种手法） |
+| **空路径子路由要有 `name`** | 🔴📌 **实测踩到**（陷阱 6）。React 无此概念 |
+| **`Menu` 没有 `defaultOpenKeys`** | 🔴📌 **实测踩到**（陷阱 7）。第 4 次「照抄写出无效属性」 |
+| **`ErrorResult` 的「可选回调 prop」** | 🔴 Vue 里**没有直译**：`defineEmits` 声明过的事件会从 `$attrs` 摘掉，`v-if="$attrs.onRetry"` 恒为 false。要拆成 `retryable` + `@retry` |
 | `Spin` 的提示 prop | 🔴 `tip` ← `description`（**UI 库版本世代**差异） |
 | 刻意中间态的手法 | 🟢 **完全相同**（第三次使用） |
 
-**本 tag 的结论**：布局层是「同构改写」的典型——概念一一对应，
-**没有任何一处需要重新设计**。
+**本 tag 的结论**：布局的**结构**完全同构——概念一一对应，没有一处需要重新设计。
+
+但它挖出了**两个真 bug 和一个不能直译的惯用法**，共同点值得记：
+
+> **它们全都编译通过、全都不报错、全都要靠跑起来才发现。**
+>
+> - 空路径子路由没 name → 只有一条 `console.warn`
+> - `defaultOpenKeys` → 静默落进 `$attrs`
+> - `$attrs.onRetry` → 恒为 false
+>
+> 三处的根因是同一个：**Vue 的模板层对「多余的东西」是宽容的**。
+> 宽容换来了透传的便利，代价是这类错误逃过了编译期。
 
 ---
 

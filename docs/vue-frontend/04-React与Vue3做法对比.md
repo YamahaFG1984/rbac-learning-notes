@@ -642,6 +642,48 @@ await router.replace('/login')      // 🔴 少了这行就是 bug
 ⚠️ 这顺带解释了一件之前没想通的事：401 为什么必须**注入一个跳转回调**
 而不能只在拦截器里清 store——**同一个原因**。
 
+### 🔴📌 同一类差异的第二面：「注入」发生的时机（`vue-v0.3.0` 实测）
+
+`vue-v0.2.0` 埋了一个 bug，`vue-v0.3.0` 才炸出来：
+
+```
+直接打开 /login → 引导阶段拉 profile 拿到 401
+  → 401 handler 把 URL 改成 /login?redirect=/login
+  → 登录成功 → target = '/login' → **跳回登录页**
+```
+
+**React 版的这段逻辑逐字相同，`safeRedirect` 也一样不拦 `/login`——
+实测跑起来它却不出问题。** 原因在组件树的形状：
+
+```tsx
+<AuthBootstrap>            {/* status==='unknown' 时只渲染 spinner，不渲染 children */}
+  <UnauthenticatedBridge />     {/* setUnauthenticatedHandler 在它的 useEffect 里 */}
+</AuthBootstrap>
+```
+
+引导阶段那个 401 到达时，**处理器根本还没装上**。
+
+| | React | Vue |
+| --- | --- | --- |
+| 「注入」发生在 | **组件挂载**（`useEffect`） | **setup**（同步，立即） |
+| 引导阶段的 401 | 处理器未装 → **无害** | 已装 → **立刻跳转** |
+| 保护来自 | 组件树层级 | 必须**显式**写判断 |
+
+> **React 的行为由组件树的形状决定，Vue 的行为由代码的执行顺序决定。**
+
+这句话把本节两个发现串起来了：
+
+| 现象 | 同一个根因 |
+| --- | --- |
+| 登出后不跳转 | React 的守卫**在树里**，状态一变就重渲染；Vue 的在导航流程里，不导航就不醒 |
+| 引导期 401 写坏 redirect | React 的注入**在树里**，父节点不渲染它就不生效；Vue 的在 setup 里，无条件生效 |
+
+⚠️ 但别把 React 那一侧读成「更好」——它那道保护是**顺带得来的**：
+`AuthBootstrap.tsx` 的注释讲的是「防死锁」，**完全没提这件事**。
+
+> **一个没被写下来的保护，重构时最容易被弄没。**
+> Vue 被迫把它写成一行显式判断，反而更耐改。
+
 ### 📌 一个反直觉的结论
 
 | | 拦截时机 | 状态变化时自动响应 | 安全价值 |
@@ -1283,6 +1325,30 @@ React 在这三处都只给了一条路（重渲染天然响应、重建 router 
 
 这是「灵活性」的真实成本：**每一条额外的路，都是一个需要被文档化的选择。**
 本项目为它写了三条 V-ADR（004 / 009 + 本节），而 React 版一条都不需要。
+
+### 📌 附：「照抄 React 版会写出无效属性」实测清单
+
+这是同一个模式在 UI 库层面的表现，实施过程中已经遇到 4 次：
+
+| tag | 位置 | React（antd 6） | Vue（antdv 4） | 类型 |
+| --- | --- | --- | --- | --- |
+| `vue-v0.2.0` | `ConfigProvider` | `button={{ autoInsertSpace: false }}` | `:auto-insert-space-in-button="false"` | 换了名字 |
+| `vue-v0.2.0` | `Spin` | `description` | `tip` | 换了名字（**方向相反**：antd 6 弃用了 `tip`） |
+| `vue-v0.3.0` | `Menu` | `defaultOpenKeys` | **不存在**，只有受控的 `openKeys` | **能力不存在** |
+| `vue-v0.10.0` | `Modal` | `destroyOnHidden` | `destroyOnClose` | 换了名字 |
+
+⚠️ **这是 UI 库版本世代的差异，不是 Vue/React 的差异**——
+antdv 4 对应的是 antd **5** 的 API 世代，不存在「antd 6 的 Vue 版」。
+**必须诚实记录，不能假装是「Vue 的问题」。**
+
+但**它们为什么全都静默失效**，就是框架层面的差异了：
+
+> **Vue 的模板对未知属性是宽容的**（透传到 `$attrs` 落在根元素上），
+> 而 React 的 TSX 对未知 prop **编译期报错**。
+
+这是 JSX 相对模板在这一点上实打实的优势。
+⚠️ 反面也要看到：正因为宽容，Vue 的模板才能把任意属性透传给子组件，
+封装第三方组件时省掉大量样板。**同一个特性，两个方向的后果。**
 
 ---
 

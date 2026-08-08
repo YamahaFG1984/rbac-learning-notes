@@ -65,6 +65,38 @@ watch(
  */
 setUnauthenticatedHandler(() => {
   auth.reset()
+
+  /*
+   * 🔴 **已经在登录页时，不要把自己记成 redirect 目标。**
+   *
+   *    实测踩到的真 bug（vue-v0.3.0 发现，但从 vue-v0.2.0 起就存在，
+   *    只是被当时测试的导航顺序掩盖了）：
+   *
+   *      直接打开 /login → 引导阶段拉 profile 拿到 401
+   *        → 这个 handler 把 URL 改成 /login?redirect=/login
+   *        → 登录成功 → target = safeRedirect('/login') = '/login'
+   *        → **跳回登录页**，表现是「登录按钮点了没反应」
+   *
+   *    📌 **React 版没有这个 bug，但原因是结构性的，不是它写了这个判断。**
+   *
+   *       React 的 <UnauthenticatedBridge /> 是 <AuthBootstrap> 的**子节点**，
+   *       而 AuthBootstrap 在 status === 'unknown' 时只渲染 spinner、
+   *       **不渲染 children** —— 所以引导阶段那个 401 到达时，
+   *       setUnauthenticatedHandler **根本还没被调用**。
+   *
+   *       它的「注入」发生在**组件挂载**时，天然带着一道时序门；
+   *       Vue 的注入发生在 **setup** 时（App 的 setup 一开始就跑完），
+   *       没有这道门。
+   *
+   *       → 同一段逻辑，React 靠组件树层级顺带获得了保护，Vue 必须显式写出来。
+   *         这和「导航期守卫对状态变化无感」是同一类差异的两面：
+   *         **React 的行为由组件树的形状决定，Vue 的行为由代码的执行顺序决定。**
+   */
+  if (window.location.pathname === '/login') {
+    void router.replace('/login')
+    return
+  }
+
   const here = window.location.pathname + window.location.search
   void router.replace({ path: '/login', query: { redirect: here } })
 })

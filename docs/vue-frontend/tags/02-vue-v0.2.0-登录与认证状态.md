@@ -269,7 +269,66 @@ router.beforeEach((to) => {
 > 📌 这是本阶段的一条暗线：**同一个职责，React 放在组件树里，Vue 放在导航流程里。**
 > 差异从 `fe-v0.3.0` ↔ `vue-v0.2.0` 就开始了，到 `vue-v0.5.0` 完全展开。
 
-### 9. `status` 三态，不是布尔
+### 9. 🔴📌 401 handler 不能把 `/login` 记成 redirect 目标（`vue-v0.3.0` 才发现）
+
+**症状**：直接打开 `/login` 输账号密码登录 → 接口 200、store 也更新了 →
+**但页面停在登录页**，看起来像「按钮点了没反应」。
+
+**链路**：
+
+```
+直接打开 /login
+  → 引导阶段拉 profile 拿到 401
+  → 401 handler 把 URL 改成 /login?redirect=/login
+  → 登录成功 → target = safeRedirect('/login') = '/login'
+  → router.replace('/login') → 跳回登录页
+```
+
+**修正两处，各自独立成立**：
+
+```ts
+// 1. App.vue 的 handler：已经在登录页时不要记录 redirect
+if (window.location.pathname === '/login') {
+  void router.replace('/login')
+  return
+}
+
+// 2. Login.vue 的 safeRedirect：指向登录页的目标永远是错的
+//    ⚠️ 这一道独立成立：redirect 是 **URL 里的、用户可控的**值，
+//       不能假定它只由我们自己写入
+if (raw === '/login' || raw.startsWith('/login?') || raw.startsWith('/login/')) return '/'
+```
+
+### 📌 React 版没有这个 bug，但原因是**结构性的**
+
+React 的 401 handler 逻辑与 Vue 版**逐字相同**，`safeRedirect` 也**一样不拦 `/login`**。
+实测（把 React 版跑起来复现同一场景）**它不会出问题**。原因在组件树的形状：
+
+```tsx
+<AuthBootstrap>          {/* status === 'unknown' 时只渲染 spinner，不渲染 children */}
+  <UnauthenticatedBridge />   {/* ← setUnauthenticatedHandler 在这里的 useEffect 里 */}
+  ...
+</AuthBootstrap>
+```
+
+**引导阶段那个 401 到达时，`setUnauthenticatedHandler` 根本还没被调用。**
+
+Vue 的 `App.vue` 在 `<script setup>` 里就注册好了——setup 一开始就跑完，没有这道门。
+
+| | React | Vue |
+| --- | --- | --- |
+| 「注入」发生在 | **组件挂载**（`useEffect`） | **setup**（同步，立即） |
+| 引导阶段的 401 | 处理器还没装上 → **无害** | 已装上 → **立刻触发跳转** |
+| 保护来自 | 组件树层级（`AuthBootstrap` 不渲染 children） | 必须显式写判断 |
+
+> 📌 **React 的行为由组件树的形状决定，Vue 的行为由代码的执行顺序决定。**
+>
+> 这和陷阱 7（导航期守卫对状态变化无感）是同一类差异的两面。
+> ⚠️ 也要看到：React 那道保护是**顺带得来的**——
+> `AuthBootstrap.tsx` 的注释讲的是「防死锁」，没提这件事。
+> **一个没被写下来的保护，重构时最容易被弄没。**
+
+### 10. `status` 三态，不是布尔
 
 ```ts
 const status = ref<'unknown' | 'authenticated' | 'anonymous'>('unknown')

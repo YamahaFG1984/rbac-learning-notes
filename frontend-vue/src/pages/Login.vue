@@ -29,6 +29,12 @@ import { useLogin } from '@/auth/useAuth'
 function safeRedirect(raw: string | null): string {
   if (!raw) return '/'
   if (!raw.startsWith('/') || raw.startsWith('//')) return '/'
+  // 🔴 指向登录页自己的 redirect 目标**永远是错的**。
+  //    命中它会造成「登录成功 → 跳回登录页」，表现是按钮点了没反应。
+  //    上游（App.vue 的 401 handler）已经不会再产生这种值了，
+  //    这里是第二道 —— 它独立成立：URL 里的 redirect 是**用户可控**的，
+  //    不能假定它只由我们自己写入。
+  if (raw === '/login' || raw.startsWith('/login?') || raw.startsWith('/login/')) return '/'
   return raw
 }
 
