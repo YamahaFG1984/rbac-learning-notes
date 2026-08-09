@@ -260,16 +260,56 @@ git diff vue-v0.5.0 vue-v0.6.0 -- frontend-vue/
 
 | 项 | 差异 |
 | --- | --- |
-| `findActiveKeys` 逻辑 | 🟢 **逐字相同**（纯函数，与框架无关） |
-| `toMenuItems` 逻辑 | 🟢 逻辑相同；🔴 `icon` 要传**渲染函数**而不是 VNode |
+| `findActiveKeys` / `flatten` / `keyOf` | 🟢🟢 **实测：去掉注释后代码逐行完全相同**（30 行，0 处不同） |
+| `toMenuItems` 逻辑 | 🟢 逻辑相同；🔴 `icon` 要传**渲染函数**而不是 VNode（见下） |
+| `iconMap` 的映射表 | 🟢 **逐字相同**（只有 import 来源和类型不同） |
 | 监听路由变化 | 🟡 `useRoute()` 天生响应式 ← `useLocation()` + `useMemo` |
-| `openKeys` 受控 | 🟡 `v-model:open-keys` ← 受控 prop + `onOpenChange` |
+| `openKeys` 受控 | 🔴 `v-model:open-keys` 是**双向**的 ← React 是受控 prop + `onOpenChange` |
 | 派生值 | 🔴 必须 `computed`（忘了 → 菜单永不更新） |
-| 图标映射 | 🟢 同一个问题第三次出现，**同样不修** |
+| 图标映射 | 🟢 同一个问题**第三次**出现，**同样不修** |
 | 空菜单文案 | 🟢 **必须逐字相同**（E2E 要断言） |
+| 菜单矩阵 | 🟢 **与 React 版 `MENU_MATRIX` 逐格相同**（实测 4 个角色全对） |
 
-**本 tag 的结论**：菜单层的**逻辑**完全与框架无关（纯函数逐字相同），
-差异只在「怎么把结果喂给 UI 组件」这一层。
+### 📌 `icon` 必须传渲染函数 —— 「React element 可复用、Vue VNode 不可复用」
+
+```ts
+// React
+icon: createElement(resolveIcon(node.icon))     // 传 VNode/element，可以
+
+// Vue
+icon: () => h(resolveIcon(node.icon))           // ✅ 传**渲染函数**
+icon: h(resolveIcon(node.icon))                 // ❌ 所有菜单项共用同一个 VNode
+```
+
+⚠️ 写错的表现是**图标随机错位/丢失**，不报错。
+Vue 的 VNode 是一次性的（渲染后带上了挂载信息），不能在多处复用；
+React 的 element 是纯描述对象，可以。
+
+**这是两种「虚拟节点」语义差异的一个非常具体的后果**，
+而它只有在「同一个描述被用于多个位置」时才暴露——菜单正好是这种场景。
+
+📌 自测用例专门加了一条：断言不同菜单项的图标 class **各不相同**。
+实测拿到 `anticon-container, anticon-file-text, anticon-apartment, …`——
+写成 `h(...)` 的话这一条会红。
+
+### 📌 `v-model:open-keys` 的双向绑定带来一条额外理由
+
+React 版的 `openKeys` 是「受控 prop + `onOpenChange`」，
+**读和写是两个方向、两处代码**。
+
+Vue 的 `v-model:open-keys` 是双向的——用户操作会**直接写回同一个 ref**，
+而 `watch` 也在写它。两者**竞争同一个变量**。
+
+→ 这正是「必须并入而不是覆盖」的额外理由：
+覆盖式赋值会和用户的操作互相打架，表现是「折叠按钮时灵时不灵」。
+
+> React 版 `fe-v0.8.0` 也踩过「覆盖 vs 并入」，但它的成因只有一个
+> （自动展开压过用户操作）。**Vue 有两个成因指向同一个修法。**
+
+**本 tag 的结论**：菜单层的**逻辑**完全与框架无关——
+`findActiveKeys` 与 React 版**逐行相同**，`iconMap` 的映射表也逐字相同。
+差异只在「怎么把结果喂给 UI 组件」这一层，而且是两处很具体的机制差异
+（VNode 不可复用、v-model 双向）。
 
 ---
 
