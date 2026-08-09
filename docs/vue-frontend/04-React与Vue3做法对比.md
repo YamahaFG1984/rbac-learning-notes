@@ -1021,30 +1021,83 @@ watch(data, (profile) => {
 }, { immediate: true })
 ```
 
-### 📌 这个陷阱在 Vue 里还在吗？
+### 📌 这个陷阱在 Vue 里还在吗？—— `vue-v0.11.0` 实测答案
 
-**待实测，`vue-v0.11.0` 给答案并回填本节。**
+**不在。但原因和「`watch` 比 `useEffect` 快」毫无关系。**
 
-已知的分析：
+实测探针（撤权后 `await refetchProfile()` 那一刻）：
 
-| | React `useEffect` | Vue `watch`（默认 `flush: 'pre'`） |
-| --- | --- | --- |
-| 触发时机 | 渲染**提交后** | 组件更新**前**（同一个 tick 内） |
-| `await refetch()` 之后 | ❌ 尚未执行 | ⚠️ **可能已执行，也可能没有** |
-
-`watch` 的回调在 Vue 的调度队列里，`await` 一个网络请求之后**微任务队列已经刷过一轮**，
-所以**很可能**已经跑了。但这依赖调度细节，**不能靠**。
-
-**无论实测结果如何，本项目都保留 React 版的解法**：
-
-```ts
-// ✅ 直接用返回值，不绕道读 store
-const fresh = await refetchProfile()
-if (!sameSet(before, fresh.perms)) notify('你的权限已更新')
+```
+before               : 6 个（含 delete）
+returned             : 5 个
+storeRightAfterAwait : 5 个     ← store **已经**更新了
 ```
 
-理由：那条规则（**「异步操作完成」≠「派生状态已更新」**）是对的，
-即使某个框架的某个版本恰好让你侥幸过关。
+**真正的原因是 Vue 版根本没走 `watch` 这条路。**
+
+`vue-v0.5.0` 把引导挪进导航守卫之后（V-ADR-005），profile 的获取变成了命令式的
+`fetchProfileIntoStore()`——它在**同一个函数里**先 `await fetchProfile()`
+再 `auth.setProfile(profile)`，**同步**完成。
+
+| | React | Vue |
+| --- | --- | --- |
+| 拉取 | `useQuery` | `await fetchProfile()` |
+| 写 store | `useEffect`（**另一步，另一个 tick**） | 同一个函数里的下一行 |
+| `await` 解决时 store | ❌ 旧值 | ✅ 新值 |
+
+> **React 那个坑之所以存在，是因为「拉取」和「写 store」被 Query + `useEffect`
+> 拆成了两步。Vue 版把它们合成了一步，坑就消失了——
+> 而合并它们的决定是为了完全不相干的理由（守卫在组件外，用不了 hook）。**
+
+⚠️ 所以这**不能**读成「Vue 的响应式更及时」。
+如果 Vue 版也用 `useProfileQuery` + `watch`（`vue-v0.4.0` 时就是这样），
+这个窗口大概率同样存在。
+
+### 🔴 而且合并这一步带来了一个新的、更响的坑
+
+照抄 React 版的 `refetchProfile` 实现：
+
+```ts
+await queryClient.refetchQueries({ queryKey: ['profile'] })
+return queryClient.getQueryData(['profile'])     // ❌ 永远是 undefined
+```
+
+**profile 从来没进过 vue-query 的缓存**（引导走的是命令式路径），
+所以 `refetchQueries` 是**空操作**，`getQueryData` 返回 `undefined`，
+整个权限变更感知**完全不工作，而且不报错**。
+
+实测踩到了：版本号确实变了（`1` → `6`）、`changed` 也是 `true`，
+但函数在 `if (!fresh) return` 那一行悄悄退出。
+
+**正确写法**：`refetchProfile: () => fetchProfileIntoStore()`。
+
+> 📌 **这是 V-ADR-005 的第 5 个连锁后果**（前四个：登出要自己导航、
+> 引导期 401 要自己判断、引导错误状态要自己造 ref、profile 拉取要两条路径）。
+>
+> 一个「守卫放哪」的决定，一路影响到了「权限变更感知怎么实现」。
+> **架构决策的影响半径，比决策本身看起来大得多。**
+
+### ⚠️ 附带更正一处我写错的断言
+
+初稿在这里写过：
+
+> Vue 必须 `before = auth.perms.slice()`，否则 Pinia 的响应式数组被原地改掉，
+> 比对永远相等、提示永远不弹。
+
+**实测：不对。** 去掉 `slice()` 之后 `before` 仍然是旧值（6 个），提示照常弹出。
+
+原因是 `store.setProfile` 写的是 `perms.value = profile.perms`（**替换引用**），
+不是 `perms.value.splice(...)`（原地修改）。
+
+> **「Pinia 的 state 是可变的」不等于「你的代码在原地改它」**——取决于 setter 怎么写。
+> 我把「框架允许什么」当成了「代码实际做什么」。
+>
+> `slice()` 保留下来，理由改成纯防御：哪天有人把 `setProfile` 改成原地修改，
+> 它是唯一的护栏，而那种改动**不会有任何测试变红**。
+
+**无论如何，「用返回值而不是回头读 store」这个写法都保留**——
+那条规则（**「异步操作完成」≠「派生状态已更新」**）是对的，
+即使这次它恰好不是必需的。
 
 > ⚠️ **这一节还藏着一个更重要的教训，而它与框架无关：**
 >

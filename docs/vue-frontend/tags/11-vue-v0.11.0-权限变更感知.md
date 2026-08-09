@@ -254,12 +254,57 @@ diff -u frontend/src/api/versionWatcher.ts frontend-vue/src/api/versionWatcher.t
 | --- | --- |
 | `watchRbacVersion` 的核心逻辑 | 🟢 **逐字相同**（纯逻辑） |
 | 两个条件（`lastSeen !== null` + `changed`） | 🟢 **逐字相同** |
-| 重拉后比对新旧 perms | 🟢 **决策相同** |
+| 重拉后比对新旧 perms | 🟢 **决策相同**（实测：改别人的权限确实不弹提示） |
 | 注入模式 | 🟢 **形状相同**（`configureVersionWatcher`） |
-| Query → store 同步 | 🟡 `watch` ← `useEffect`（**时序等价性本 tag 实测**） |
-| `before` 快照 | 🔴🔴 **Vue 必须 `slice()`**（响应式数组是同一个引用） |
-| 界面自动更新 | 🟡 Vue 靠 `computed` 自动传播；**漏写的地方在此暴露** |
-| 登出清理项 | 🔴 Vue **五样**，React **四样** |
+| **`refetchProfile` 的实现** | 🔴🔴 **不能照抄** `refetchQueries(['profile'])`——那是空操作（见下） |
+| React 的 `useEffect` 时序坑 | 🟢 **在 Vue 版不存在**，但原因不是 `watch` 更快（见下） |
+| `before` 快照 | ⚠️📌 **我断言错了**：`slice()` 实测不是必需的（见下） |
+| 界面自动更新 | 🟡 Vue 靠 `computed` 自动传播 |
+| 登出清理项 | 🟢 **四样，与 React 相同**（`vue-v0.5.0` 把路由清理变成派生效果之后） |
+
+### 🔴📌 实测三个发现
+
+**1. `refetchProfile` 照抄 React 会完全不工作，且不报错**
+
+```ts
+await queryClient.refetchQueries({ queryKey: ['profile'] })
+return queryClient.getQueryData(['profile'])     // ❌ 永远 undefined
+```
+
+`vue-v0.5.0` 把引导挪进守卫后，profile 走的是命令式的 `fetchProfileIntoStore()`，
+**从来没进过 vue-query 的缓存**。实测：版本号确实变了（`1` → `6`）、
+`changed` 也是 `true`，但函数在 `if (!fresh) return` 悄悄退出。
+
+正确写法：`refetchProfile: () => fetchProfileIntoStore()`。
+
+📌 这是 **V-ADR-005 的第 5 个连锁后果**。一个「守卫放哪」的决定，
+一路影响到了「权限变更感知怎么实现」。
+
+**2. React 的 `useEffect` 时序坑在 Vue 版不存在——但不是因为 `watch`**
+
+实测探针：`await refetchProfile()` 那一刻 `storeRightAfterAwait` 已经是新值。
+
+原因是 Vue 版**根本没走 `watch`**：`fetchProfileIntoStore()` 在同一个函数里
+先 `await fetchProfile()` 再 `auth.setProfile(profile)`，同步完成。
+
+> React 那个坑存在，是因为「拉取」和「写 store」被 Query + `useEffect` 拆成两步。
+> **Vue 把它们合成一步，坑就消失了——而合并的理由完全不相干（守卫用不了 hook）。**
+
+⚠️ 不能读成「Vue 的响应式更及时」。`vue-v0.4.0` 时用的就是
+`useProfileQuery` + `watch`，那个窗口大概率同样存在。
+
+**3. ⚠️ `before` 的 `slice()` —— 我断言错了**
+
+初稿写「Vue 必须 slice，否则 Pinia 的响应式数组被原地改掉，提示永远不弹」。
+**实测：去掉 slice 之后 `before` 仍是旧值，提示照常弹。**
+
+因为 `setProfile` 写的是 `perms.value = profile.perms`（替换引用），
+不是 `perms.value.splice(...)`（原地修改）。
+
+> **「Pinia 的 state 是可变的」不等于「你的代码在原地改它」。**
+> 我把「框架允许什么」当成了「代码实际做什么」。
+
+`slice()` 保留，理由改成纯防御。
 
 ---
 

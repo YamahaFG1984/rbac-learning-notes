@@ -1,6 +1,7 @@
 import axios from 'axios'
 
 import { attachCsrfToken } from './csrf'
+import { watchRbacVersion } from './versionWatcher'
 
 /**
  * 统一的 API 客户端。
@@ -69,8 +70,22 @@ export function redirectToLoginOnce() {
 }
 
 client.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // 版本号搭在已有响应上，零额外请求（F-ADR-010）
+    void watchRbacVersion(response)
+    return response
+  },
   (error: { response?: { status?: number } }) => {
+    if (error.response) {
+      /*
+       * ⚠️ 错误响应也带版本号 —— 而且这恰恰是最需要它的时候：
+       *    权限刚被撤销时，用户碰到的第一个响应往往就是 403。
+       *
+       *    漏掉这一支的表现：撤权后用户点按钮 → 403 → 提示「无权限」→
+       *    但按钮**还在**，再点还是 403。用户会一直点。
+       */
+      void watchRbacVersion(error.response as never)
+    }
     if (error.response?.status === 401) redirectToLoginOnce()
 
     // ⚠️ 一定要继续 reject。

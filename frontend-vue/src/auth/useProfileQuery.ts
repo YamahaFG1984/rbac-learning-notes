@@ -1,10 +1,7 @@
-import { useQuery } from '@tanstack/vue-query'
-import { computed, ref, watch } from 'vue'
+import { ref } from 'vue'
 
 import { fetchProfile } from './api'
 import { useAuthStore } from './store'
-
-export const PROFILE_QUERY_KEY = ['profile'] as const
 
 /**
  * 引导阶段拉 profile 失败，且**不是 401**。
@@ -25,10 +22,28 @@ export const PROFILE_QUERY_KEY = ['profile'] as const
  *      原本免费的「组件状态」就得自己造一份。**
  */
 export const bootError = ref<unknown | null>(null)
-export const bootRetrying = ref(false)
+
+/*
+ * 📌 **`useProfileQuery()` 这个 composable 在 vue-v0.11.0 被删掉了。**
+ *
+ *    vue-v0.5.0 把引导挪进导航守卫之后，它就再也没有调用点——
+ *    守卫在组件外，用不了 composable，走的是下面那个命令式的
+ *    `fetchProfileIntoStore()`。留着一份没人调的 useQuery 只会误导人。
+ *
+ *    ⚠️ **这个删除有连锁后果**，vue-v0.11.0 实测才发现：
+ *
+ *      profile **从来没进过 vue-query 的缓存**，
+ *      所以 `queryClient.refetchQueries({ queryKey: ['profile'] })` 是**空操作**——
+ *      权限变更感知照抄 React 版的写法会完全不工作，而且不报错。
+ *
+ *      React 版的引导走 useProfileQuery，profile 在 Query 缓存里，
+ *      invalidate/refetch 天然可用。**Vue 版没有这个前提。**
+ *
+ *    → 见 04 对比文档第 11 节。
+ */
 
 /**
- * 拉取当前用户的 profile，并写入权限 store。
+ * 命令式地拉一次 profile 并写进 store，无论成败都把 status 置为终态。
  *
  * ⚠️ **这是权限数据的唯一写入口**（F-ADR-005）。
  *    除本文件外，任何地方都不许调 `auth.setProfile()`——
@@ -38,55 +53,6 @@ export const bootRetrying = ref(false)
  *       Pinia 的 state 是公开可写的（`auth.perms = [...]` 完全合法、不报错），
  *       而 Zustand 至少还要走一次 `setState`。
  *       vue-v0.13.0 会加一条结构性测试扫这类直接赋值。
- */
-export function useProfileQuery() {
-  const auth = useAuthStore()
-
-  const query = useQuery({
-    // ⚠️ 即使没有参数也写 computed（V-ADR-009）。
-    //    「现在没参数」会变成「以后加了参数」，而加参数的人不会想到
-    //    还要改 queryKey 的形式。统一写法把陷阱从「需要记住」变成「不可能踩到」。
-    queryKey: computed(() => [...PROFILE_QUERY_KEY]),
-    queryFn: fetchProfile,
-    // profile 不该被「窗口聚焦」「网络重连」这类事件随意刷新。
-    // 它只应由两件事触发重拉：版本号变化（vue-v0.11.0）和收到 403。
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    // 401 重试三次只会让用户多等，跳登录页更慢
-    retry: false,
-  })
-
-  /*
-   * 🟡 对照 React 版的 useEffect：
-   *
-   *      useEffect(() => {
-   *        if (query.data) setProfile(query.data)
-   *        else if (query.isError) reset()
-   *      }, [query.data, query.isError, setProfile, reset])
-   *
-   *    Vue 的 watch 不需要依赖数组——它追踪的是回调里实际读到的响应式值。
-   *
-   *    ⚠️ 但 `immediate: true` 不能少：缓存命中时 data 一开始就有值，
-   *       不加的话 watch 不会触发，store 永远是空的。
-   *
-   *    📌 fe-v0.13.0 在这个位置踩过一个坑（`await refetch()` 之后 store 还没更新，
-   *       因为 useEffect 要等重新渲染才跑）。**watch 有没有同样的窗口？**
-   *       到 vue-v0.11.0 实测，回填 04 对比文档第 11 节。
-   */
-  watch(
-    [query.data, query.isError],
-    ([profile, errored]) => {
-      if (profile) auth.setProfile(profile)
-      else if (errored) auth.reset()
-    },
-    { immediate: true },
-  )
-
-  return query
-}
-
-/**
- * 命令式地拉一次 profile 并写进 store，无论成败都把 status 置为终态。
  *
  * 🔴 **`vue-v0.5.0` 的导航守卫要用它**，所以它必须能在组件外调用——
  *    这就是为什么它不是 composable：`useQuery` 依赖组件实例，

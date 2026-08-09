@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/vue-query'
 import { useRouter } from 'vue-router'
 
 import { resetAuthRedirectGuard } from '@/api/client'
+import { resetVersionWatcher } from '@/api/versionWatcher'
 
 import { loginRequest, logoutRequest } from './api'
 import { useAuthStore } from './store'
@@ -49,10 +50,14 @@ export function useLogout() {
       //    > 把命令式的 addRoute 包装成派生效果，就拿回了 React 的那个性质。
       //    > 代价是你必须自己想到这一步——框架不会提示你。
       //
-      //    ⚠️ resetVersionWatcher() 到 vue-v0.11.0 才会加进来。
       queryClient.clear()
       auth.reset()
       resetAuthRedirectGuard()
+      /*
+       * ⚠️ 不重置的话，下一个用户登录时 lastSeen 还是上一个会话的值，
+       *    第一个响应就会被判定为「版本变了」，白白多拉一次 profile。
+       */
+      resetVersionWatcher()
 
       /*
        * 🔴🔴 **必须显式跳转。这一行 React 版没有，而漏掉它是个真 bug。**

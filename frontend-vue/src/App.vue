@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { App as AntdApp, Button, ConfigProvider, Result } from 'ant-design-vue'
+import { App as AntdApp, Button, ConfigProvider, Result, message } from 'ant-design-vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { setUnauthenticatedHandler } from '@/api/client'
+import { configureVersionWatcher } from '@/api/versionWatcher'
 import { useAuthStore } from '@/auth/store'
 import { bootError, fetchProfileIntoStore } from '@/auth/useProfileQuery'
 
@@ -26,6 +27,44 @@ const auth = useAuthStore()
 const router = useRouter()
 
 const retrying = ref(false)
+
+/**
+ * 把「权限快照过期了怎么办」注入 axios 拦截器。
+ *
+ * 和 `setUnauthenticatedHandler` 同一个手法：api 层不认识 Query 和 UI，
+ * 由 App 在这里把能力注进去。
+ *
+ * 🔴📌 **`refetchProfile` 必须走 `fetchProfileIntoStore()`，
+ *       不能照抄 React 版的 `queryClient.refetchQueries(['profile'])`。**
+ *
+ *       vue-v0.5.0 把引导挪进守卫之后，profile **从来没进过 vue-query 的缓存**，
+ *       refetchQueries 是**空操作**——照抄 React 的写法完全不工作，且不报错。
+ *       实测：getQueryData(['profile']) 返回 undefined，store 也纹丝不动。
+ *
+ *       这是 V-ADR-005（守卫放导航期）的又一个连锁后果。
+ *
+ * ⚠️ 仍然**返回拉到的 profile 本身**，不让调用方回头读 store——
+ *    那条规则（「异步操作完成」≠「派生状态已更新」）与框架无关，
+ *    即使这里 fetchProfileIntoStore 恰好是同步写 store 的。
+ *
+ * ⚠️ `message` 这里用**静态导入**而不是 `App.useApp()`：
+ *    这段代码在 App 组件的 setup 里执行，而 `<AntdApp>` 是它的**子节点**，
+ *    此时 useApp 的 context 还没建立。
+ *    非阻塞提示不依赖 ConfigProvider 的按钮配置，用静态的没问题。
+ */
+configureVersionWatcher({
+  refetchProfile: async () => {
+    try {
+      return await fetchProfileIntoStore()
+    } catch {
+      return undefined
+    }
+  },
+  // ⚠️ 非阻塞提示，不是 Modal —— 这不是需要用户确认的事。
+  //    但也不能什么都不说：按钮突然消失、菜单少一项，
+  //    用户会以为自己看错了或者系统抽风。
+  notify: (text) => message.info(text),
+})
 
 /** VE-2.4：引导失败时的重试。重新拉一次 profile，成功就补注册路由并重新导航。 */
 async function retryBoot() {
