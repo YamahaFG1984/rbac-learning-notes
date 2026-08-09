@@ -234,18 +234,49 @@ diff -u frontend/src/api/errorHandlers.ts frontend-vue/src/api/errorHandlers.ts
 
 | 项 | 差异 |
 | --- | --- |
-| `errorHandlers.ts` | 🟢 **几乎逐字相同** |
-| 401/403/404 分流表 | 🟢 **逐字相同** |
+| `errorHandlers.ts` | 🟢🟢 **逐字相同**（252 行里只跟状态码和回调打交道） |
+| 401/403/404 分流表 | 🟢 **逐字相同**，实测行为也一致 |
 | 401 并发去重 | 🟢 **逐字相同**（模块级 flag，与框架无关） |
 | 必须继续 reject | 🟢 **相同** |
-| 404 文案 | 🟢 **必须逐字相同**（E2E 断言） |
-| **错误边界实现** | 🔴 `onErrorCaptured` + `app.config.errorHandler` ← **class 组件** |
-| **错误边界的限制** | 🟢🟢 **完全相同**（都兜不住异步和事件处理器） |
+| 404 文案 | 🟢 **逐字相同** |
+| **错误边界实现** | 🔴 `onErrorCaptured`（普通钩子）← **class 组件**（React 唯一必须写 class 的地方） |
+| **错误边界的限制** | 🟢🟢 **实测完全相同**（都兜不住事件处理器里的错误） |
 | 冒泡控制 | 🔴 Vue 要 `return false`；React 捕获即停止 |
+| 全局兜底 | 🟡 Vue 有内建的 `app.config.errorHandler`；React 要自己在根部包 + `window.onerror` |
+| `BootErrorFallback` 的约束 | 🟢 **逐字相同的理由**（兜底组件的依赖必须比它兜的东西更少） |
+| 模板访问 `window` | 🟡 Vue 要在 script 里包一层；React 的 JSX 可以直接写 |
+
+### 📌 实测确认的四条
+
+| 场景 | 结果 |
+| --- | --- |
+| 渲染期 `throw` | ✅ 边界兜住，显示兜底页，**应用不白屏** |
+| `return false` 的作用 | ✅ 全局 handler **没有**重复处理同一个错误（0 次） |
+| 重试后恢复 | ✅ 去掉错误源后页面正常 |
+| **事件处理器里的 `throw`** | ✅ **边界兜不住**——与 React **完全相同** |
+
+> **最后一行才是重点。** `onErrorCaptured` 和 `componentDidCatch` 都不捕获
+> 事件处理器、`setTimeout`、Promise 回调里的错误。
+>
+> **这个限制不是框架的选择，是「同步渲染栈之外的错误无法被组件捕获」这个事实。**
+> 换框架改变不了它。凡是这类「两边完全一样」的限制，都值得特别标注——
+> 它们是真正的约束，而不是可以通过选型绕开的东西。
+
+⚠️ 所以 **5xx 不能靠错误边界兜住**——那是 HTTP 状态码不是 JS 异常，
+走 axios 拦截器那条路。`app.config.errorHandler` 的存在很容易让人
+误以为「什么都被兜住了」。
+
+### 📌 一处 Vue 多给的挂载点
+
+`app.config.errorHandler` 是内建的全局兜底，React 没有等价物——
+它需要在根部自己包一层，再加 `window.onerror` / `unhandledrejection`
+才能覆盖同样的范围。
+
+⚠️ 但它**同样兜不住 5xx**。多一个挂载点不等于多一层保护。
 
 **本 tag 的结论**：错误处理层是「实现不同、约束相同」的典型。
-**约束相同**比「实现不同」重要得多——它说明这些限制来自 JS 的执行模型，
-不来自框架。
+`errorHandlers.ts` 逐字相同，四条实测行为一致，
+**唯一的实现差异（class vs 钩子）没有带来任何行为差异**。
 
 ---
 

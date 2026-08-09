@@ -1,6 +1,7 @@
 import axios from 'axios'
 
 import { attachCsrfToken } from './csrf'
+import { handleApiError } from './errorHandlers'
 import { watchRbacVersion } from './versionWatcher'
 
 /**
@@ -86,7 +87,16 @@ client.interceptors.response.use(
        */
       void watchRbacVersion(error.response as never)
     }
-    if (error.response?.status === 401) redirectToLoginOnce()
+
+    /*
+     * ⚠️ vue-v0.12.0 起，401 的跳转由 `errorHandlers` 统一分流负责，
+     *    这里不再单独判断——**避免两处实现同一件事**。
+     *
+     * 🔴 分流表里最要紧的一条：**403 绝不跳登录页**。
+     *    写成 `if (status === 401 || status === 403) redirectToLogin()`
+     *    会造成「登录 → 403 → 登录」的死循环，而用户会以为账号坏了。
+     */
+    handleApiError(error as never)
 
     // ⚠️ 一定要继续 reject。
     //    这里 return 一个 resolved promise 的话，调用方拿到的是

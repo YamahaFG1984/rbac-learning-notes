@@ -4,10 +4,13 @@ import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { setUnauthenticatedHandler } from '@/api/client'
+import { redirectToLoginOnce, setUnauthenticatedHandler } from '@/api/client'
+import { configureErrorHandlers } from '@/api/errorHandlers'
 import { configureVersionWatcher } from '@/api/versionWatcher'
 import { useAuthStore } from '@/auth/store'
 import { bootError, fetchProfileIntoStore } from '@/auth/useProfileQuery'
+import AppErrorBoundary from '@/components/AppErrorBoundary.vue'
+import BootErrorFallback from '@/components/BootErrorFallback.vue'
 
 /**
  * ⚠️ vue-v0.5.0 起，**profile 的拉取整个搬进了导航守卫**（V-ADR-005）。
@@ -64,6 +67,21 @@ configureVersionWatcher({
   //    但也不能什么都不说：按钮突然消失、菜单少一项，
   //    用户会以为自己看错了或者系统抽风。
   notify: (text) => message.info(text),
+})
+
+/**
+ * 把 401/403/404 的分流能力注入 axios 拦截器（VE-7.x）。
+ *
+ * 🟢 形状与 React 版 `App.tsx` 的 `configureErrorHandlers` **完全相同**。
+ *
+ * ⚠️ `refetchProfile` 这里是 403 的**兜底**：用户停在静态页面时
+ *    版本号感知不到（VE-5.4 的盲区），但他一点按钮就会撞上 403。
+ */
+configureErrorHandlers({
+  redirectToLogin: redirectToLoginOnce,
+  refetchProfile: () => void fetchProfileIntoStore().catch(() => {}),
+  warn: (text) => message.warning(text),
+  error: (text) => message.error(text),
 })
 
 /** VE-2.4：引导失败时的重试。重新拉一次 profile，成功就补注册路由并重新导航。 */
@@ -184,7 +202,22 @@ setUnauthenticatedHandler(() => {
 
       这里保留 v-else 只是为了在引导失败时不同时渲染两套 UI。
     -->
-    <RouterView v-else />
+    <!--
+      🔴 错误边界包在 <RouterView> 外面，但在 <ConfigProvider> 里面。
+
+         · 在 ConfigProvider **里面**：fallback 用的 antdv 组件才有主题/locale
+         · 在 RouterView **外面**：页面组件渲染崩了才兜得住
+
+      ⚠️ fallback 用的是 BootErrorFallback 而不是 ErrorResult ——
+         后者依赖 useRouter()，而错误可能就发生在路由上下文里。
+         **兜底组件的依赖必须比它兜的东西更少。**
+    -->
+    <AppErrorBoundary v-else>
+      <template #fallback="{ reset }">
+        <BootErrorFallback @retry="reset" />
+      </template>
+      <RouterView />
+    </AppErrorBoundary>
     </AntdApp>
   </ConfigProvider>
 </template>

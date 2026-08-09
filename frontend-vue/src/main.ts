@@ -104,4 +104,20 @@ app.use(VueQueryPlugin, vueQueryOptions)
  *    📌 详见 04-React与Vue3做法对比.md 第 16 节。
  */
 
+/*
+ * 🔴 全局兜底：`onErrorCaptured` **兜不住**的那些错误
+ *    （事件处理器、setTimeout、Promise 回调）最终会到这里。
+ *
+ * 🟡 React 没有内建的等价物——它需要在根部自己包一层，
+ *    再加 `window.onerror` / `unhandledrejection` 才能覆盖同样的范围。
+ *    这是 Vue 多给的一个挂载点。
+ *
+ * ⚠️ 但它**同样兜不住 5xx**：那是 HTTP 状态码，不是 JS 异常。
+ *    5xx 走 axios 拦截器那条路（errorHandlers.ts）。
+ *    「有一个全局 handler」很容易让人以为「什么都被兜住了」。
+ */
+app.config.errorHandler = (err, _instance, info) => {
+  console.error('[app]', err, info)
+}
+
 app.mount('#app')
