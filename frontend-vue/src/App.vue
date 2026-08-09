@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, ConfigProvider, Result } from 'ant-design-vue'
+import { App as AntdApp, Button, ConfigProvider, Result } from 'ant-design-vue'
 import zhCN from 'ant-design-vue/es/locale/zh_CN'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -102,6 +102,29 @@ setUnauthenticatedHandler(() => {
   -->
   <ConfigProvider :locale="zhCN" :auto-insert-space-in-button="false">
     <!--
+      🔴📌 `<App>` 不是可选的装饰，它解决一个实测踩到的真问题。
+
+         `Modal.confirm()` / `message.*` 这类**静态方法**是在应用组件树
+         **之外**渲染的（挂到 body 上的独立 vnode 树），
+         因此**拿不到 `<ConfigProvider>` 的配置**。
+
+         实测：树内的按钮是「删除」「派单」（正确），
+         而 `Modal.confirm()` 的按钮渲染成 **「取 消」「确 定」**——
+         `auto-insert-space-in-button="false"` 对它完全无效。
+
+         后果：所有按文本找确认框按钮的代码（含 E2E）全部失效，
+         而报错只说「找不到元素」。
+
+         `<App>` 提供了 context 感知的 `modal` / `message` / `notification`，
+         调用方改用 `App.useApp()` 拿到的那份即可。
+
+         🟢 **React 版早就这么做了**（main.tsx 里的 `<AntdApp>` +
+            页面里的 `App.useApp()`）——antd 5 引入 `<App>` 正是为了这个。
+            我一开始直接 import 了静态的 `Modal`，是**没照抄到位**，
+            不是框架差异。
+    -->
+    <AntdApp>
+    <!--
       VE-2.4：profile 拉不到时给可重试的错误页，而不是白屏。
       ⚠️ 401 不排在这里——那是「你没登录」，是正常流程，由守卫送去登录页。
     -->
@@ -123,5 +146,6 @@ setUnauthenticatedHandler(() => {
       这里保留 v-else 只是为了在引导失败时不同时渲染两套 UI。
     -->
     <RouterView v-else />
+    </AntdApp>
   </ConfigProvider>
 </template>

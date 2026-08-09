@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { Button, Space, Table, Tag } from 'ant-design-vue'
+import { App as AntdApp, Button, Space, Table, Tag } from 'ant-design-vue'
 import type { ColumnsType } from 'ant-design-vue/es/table'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
 import {
   exportTicketsUrl,
   type Ticket,
+  type TicketPayload,
   type TicketPriority,
   type TicketStatus,
 } from '@/api/tickets'
 import { usePermission } from '@/auth/usePermission'
 import Can from '@/components/Can.vue'
 import { PERM } from '@/constants/permissions'
+import AssignModal from '@/features/tickets/AssignModal.vue'
 import TicketFilters from '@/features/tickets/TicketFilters.vue'
+import TicketForm from '@/features/tickets/TicketForm.vue'
 import { useTicketList } from '@/features/tickets/useTicketList'
+import { useTicketMutations } from '@/features/tickets/useTicketMutations'
 import { useTableQuery } from '@/hooks/useTableQuery'
 import PageContainer from '@/layouts/PageContainer.vue'
 
@@ -102,13 +106,78 @@ function onTableChange(p: { current?: number }) {
 function onExport() {
   window.open(exportTicketsUrl(params.value))
 }
+
+// ─────────────────────────────────────────────────────────────
+// 写操作（vue-v0.9.0）
+// ─────────────────────────────────────────────────────────────
+
+const { create, remove, assign } = useTicketMutations()
+
+const creating = ref(false)
+const assigningId = ref<number | null>(null)
+const formRef = ref<InstanceType<typeof TicketForm> | null>(null)
+
+const assigningTicket = computed(() =>
+  query.data.value?.results.find((t) => t.id === assigningId.value),
+)
+
+async function onCreate(payload: TicketPayload) {
+  try {
+    await create.mutateAsync(payload)
+    creating.value = false
+  } catch (err) {
+    formRef.value?.showServerError(err)
+  }
+}
+
+async function onAssign(assignee: number | null) {
+  try {
+    await assign.mutateAsync({ targetId: assigningId.value!, assignee })
+    assigningId.value = null
+  } catch {
+    // 拦截器已经提示过了
+  }
+}
+
+/*
+ * ⚠️ 删除必须二次确认。
+ *
+ *    这不只是体验问题：列表页的删除按钮和行是对齐的，
+ *    误点一行删掉另一行的数据是真实会发生的事。
+ *    确认框里带上标题，让用户确认的是「这一条」而不是「删除」这个动作。
+ *
+ * 🔴📌 **必须用 `App.useApp()` 拿到的 `modal`，不能 import 静态的 `Modal`。**
+ *
+ *    静态方法在组件树**之外**渲染，拿不到 `<ConfigProvider>` 的配置。
+ *    实测：静态 `Modal.confirm()` 的按钮渲染成 **「取 消」「确 定」**，
+ *    而同一页面里树内的按钮是正确的「删除」「派单」——
+ *    `auto-insert-space-in-button="false"` 对它完全无效。
+ *
+ *    后果是所有按文本找确认框按钮的代码（含 E2E）全部失效，
+ *    而报错只说「找不到元素」。
+ *
+ *    🟢 React 版早就这么做了（`App.useApp()`）——**这是我没照抄到位，
+ *       不是框架差异。**
+ */
+const { modal } = AntdApp.useApp()
+
+function confirmRemove(row: Ticket) {
+  modal.confirm({
+    title: '确认删除？',
+    content: `工单「${row.title}」将被删除，此操作不可撤销。`,
+    okType: 'danger',
+    okText: '确定',
+    cancelText: '取消',
+    onOk: () => remove.mutateAsync(row.id),
+  })
+}
 </script>
 
 <template>
   <PageContainer title="工单列表">
     <template #extra>
       <Can :perm="PERM.TICKET_TICKET_CREATE">
-        <Button type="primary">新建工单</Button>
+        <Button type="primary" @click="creating = true">新建工单</Button>
       </Can>
       <Can :perm="PERM.TICKET_TICKET_EXPORT">
         <!--
@@ -161,14 +230,42 @@ function onExport() {
                  功能在 vue-v0.9.0 接上，本 tag 只占位。
             -->
             <Can :perm="PERM.TICKET_TICKET_ASSIGN">
-              <Button type="link" size="small">派单</Button>
+              <Button
+                type="link"
+                size="small"
+                @click="assigningId = (record as Ticket).id"
+              >
+                派单
+              </Button>
             </Can>
             <Can :perm="PERM.TICKET_TICKET_DELETE">
-              <Button type="link" size="small" danger>删除</Button>
+              <Button
+                type="link"
+                size="small"
+                danger
+                @click="confirmRemove(record as Ticket)"
+              >
+                删除
+              </Button>
             </Can>
           </Space>
         </template>
       </template>
     </Table>
+
+    <TicketForm
+      ref="formRef"
+      :open="creating"
+      :confirm-loading="create.isPending.value"
+      @cancel="creating = false"
+      @submit="onCreate"
+    />
+    <AssignModal
+      :open="assigningId !== null"
+      :current-assignee="assigningTicket?.assignee ?? null"
+      :confirm-loading="assign.isPending.value"
+      @cancel="assigningId = null"
+      @submit="onAssign"
+    />
   </PageContainer>
 </template>

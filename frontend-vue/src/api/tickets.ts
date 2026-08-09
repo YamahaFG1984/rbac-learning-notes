@@ -77,3 +77,57 @@ export function exportTicketsUrl(params: Omit<TicketListParams, 'page'>) {
   const suffix = qs.toString()
   return `/api/v1/tickets/export/${suffix ? `?${suffix}` : ''}`
 }
+
+export interface Assignee {
+  id: number
+  username: string
+  real_name: string
+  department_name: string
+}
+
+/**
+ * 派单候选人。
+ *
+ * ⚠️ 走 `/tickets/assignable-users/` 而不是 `/users/`。
+ *    后者要 `system:user:view`，而 cs_manager 只有 assign 权限——
+ *    复用它等于强迫「能派单的人」都得有「用户管理」权限，
+ *    **权限点会被业务需求倒逼着变粗**，这是权限模型腐化的典型路径。
+ *
+ * 📌 React 阶段（fe-v0.11.0）在这里挖出过一个**真实漏洞**：
+ *    派单下拉框列出了全部 6 个用户，而 cs_manager 没有 system:user:view，
+ *    却能看到完整的员工名册。后端已经修好（apps/tickets/services.py::
+ *    get_assignable_users，走 get_user_dept_ids，ADR-016）。
+ *    **Vue 版直接受益——但仍然要验证一次，别因为「后端修过了」就假定前端调对了接口。**
+ */
+export async function fetchAssignableUsers() {
+  const { data } = await client.get<Assignee[]>('/tickets/assignable-users/')
+  return data
+}
+
+/** 新建/编辑允许提交的字段。⚠️ 没有 creator / department —— 见 TicketForm 注释 */
+export interface TicketPayload {
+  title: string
+  content: string
+  priority: TicketPriority
+  status: TicketStatus
+  assignee: number | null
+}
+
+export async function createTicket(payload: TicketPayload) {
+  const { data } = await client.post<Ticket>('/tickets/', payload)
+  return data
+}
+
+export async function updateTicket(id: number, payload: TicketPayload) {
+  const { data } = await client.put<Ticket>(`/tickets/${id}/`, payload)
+  return data
+}
+
+export async function deleteTicket(id: number) {
+  await client.delete(`/tickets/${id}/`)
+}
+
+export async function assignTicket(id: number, assignee: number | null) {
+  const { data } = await client.post<Ticket>(`/tickets/${id}/assign/`, { assignee })
+  return data
+}

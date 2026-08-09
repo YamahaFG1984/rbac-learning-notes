@@ -1398,6 +1398,16 @@ React 在这三处都只给了一条路（重渲染天然响应、重建 router 
 | `vue-v0.2.0` | `Spin` | `description` | `tip` | 换了名字（**方向相反**：antd 6 弃用了 `tip`） |
 | `vue-v0.3.0` | `Menu` | `defaultOpenKeys` | **不存在**，只有受控的 `openKeys` | **能力不存在** |
 | `vue-v0.10.0` | `Modal` | `destroyOnHidden` | `destroyOnClose` | 换了名字 |
+| `vue-v0.9.0` | `Modal.confirm()` | 需要 `<App>` + `App.useApp()` | **同样需要** | 🟢 **不是差异——是我漏抄了** |
+
+📌 最后一行是个反例，值得单独说：静态的 `Modal.confirm()` 在组件树**之外**
+渲染，拿不到 `<ConfigProvider>` 配置，按钮实测渲染成 **「确 定」**。
+**React 版早就用 `<App>` + `App.useApp()` 解决了**（antd 5 引入 `<App>` 正是为此），
+我照抄时漏掉了——因为那个解法在 `main.tsx` 的一层组件包装里，
+不在我当时正在抄的那个文件里。
+
+> **「照着另一个实现写」比「从零写」少踩很多坑，
+> 但它会漏掉那些「不在你视线范围内的文件」里的决策。**
 
 ⚠️ **这是 UI 库版本世代的差异，不是 Vue/React 的差异**——
 antdv 4 对应的是 antd **5** 的 API 世代，不存在「antd 6 的 Vue 版」。
