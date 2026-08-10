@@ -60,6 +60,17 @@ jobs:
       - name: 服务端校验清单是最新的
         run: python manage.py export_enforced_perms --check
 
+      # 🔴 阶段四（Vue）：**两个前端**的生成产物都要与后端一致。
+      #
+      #    ⚠️ 只跑其中一个是不够的——「其中一个前端忘了重新生成」
+      #       正好是另一个的 --check 看不见的那类问题。
+      #    另外 frontend-vue 的结构性测试还会直接 diff 两个文件，
+      #    那一层守的是「有人手工编辑了其中一份」。
+      - name: 权限常量与后端一致（Vue）
+        run: python manage.py export_perm_constants --out frontend-vue/src/constants/permissions.ts --check
+      - name: 服务端校验清单是最新的（Vue）
+        run: python manage.py export_enforced_perms --out frontend-vue/src/test/enforced-perms.json --check
+
       # 🔒 本阶段最重要的一条架构承诺（ADR-013 / FAC-4）：
       #    权限内核不认识任何表现层。三种表现层接完，它一行都没改。
       - name: 权限内核未被表现层污染

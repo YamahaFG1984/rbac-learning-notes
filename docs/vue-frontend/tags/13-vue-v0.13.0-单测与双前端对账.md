@@ -240,16 +240,80 @@ diff -u frontend/tests/unit/no-client-side-filtering.test.ts \
 
 | 项 | 差异 |
 | --- | --- |
-| MSW handlers / fixtures | 🟢 **逐字相同** |
+| MSW handlers / server / fixtures | 🟢🟢 **逐字节相同**（实测 `diff -q` 为空） |
+| `errorHandlers.test.ts` | 🟢🟢 **逐字复用，14 条全绿**（它只跟状态码和回调打交道） |
+| `authFlow.test.ts`（集成 + MSW） | 🟢🟢 **逐字复用，10 条全绿** |
 | 不 mock axios | 🟢 **同一条铁律** |
 | `no-client-side-filtering` | 🟢 只差扫描后缀 |
-| `permCoverage` 结构性测试 | 🟢 只差扫描后缀 |
+| `permCoverage` 结构性测试 | 🟡 改了**两处**（后缀 + 先去注释，见下） |
 | **store 隔离** | 🔴 `setActivePinia` ← `setState(INITIAL)`；**麻烦方向相反** |
-| 忘了隔离的表现 | 🔴 Vue 抛错，React **顺序相关**（React 更难查） |
-| 断言时序 | 🟡 `nextTick` ← `waitFor` |
+| 断言时序 | 🟡 `await nextTick()`（确定）← `waitFor`（轮询） |
 | 组件渲染 | 🟡 `@testing-library/vue` ← `@testing-library/react`（API 几乎相同） |
 | 覆盖率策略 | 🟢 **沿用 React 版的结论**，不重走一遍纠结 |
+| **`dynamicRoutes.test.ts`** | 🔴🔴 **Vue 独有**（React 的路由表是 `f(menus)`，无从测起） |
+| **`storeOutsideComponent.test.ts`** | 🔴🔴 **Vue 独有**（`VE-2.6`） |
 | **双前端对账** | 🔴 **本阶段新增**（React 阶段不存在这个问题） |
+
+### 📌 实测：哪些测试能逐字复用
+
+| 文件 | 结果 |
+| --- | --- |
+| `src/test/msw/handlers.ts` | ✅ 逐字节相同 |
+| `src/test/msw/server.ts` | ✅ 逐字节相同 |
+| `src/test/fixtures.ts` | ✅ 逐字节相同 |
+| `tests/unit/errorHandlers.test.ts` | ✅ **逐字节相同**，14 条全绿 |
+| `tests/integration/authFlow.test.ts` | ✅ **逐字节相同**，10 条全绿 |
+
+> **一份能跨框架复用的测试，说明它测的是「系统的行为」而不是「实现」。**
+> 这五个文件加起来 24 条断言，一个字没改就在另一个框架上跑通了。
+
+### 🔴📌 `permCoverage` 的扫描器有个弱点（React 版也有，只是没被触发）
+
+第一次跑就红了：
+
+```
+offenders: ["undefined（用于 src/auth/usePermission.ts）"]
+```
+
+原因是我在 `usePermission.ts` 的**注释**里写了 `PERM.X` 举例，
+而扫描器用正则直接扫源码文本，把注释也算进去了。
+
+**React 版的扫描器有同样的弱点**，只是它的源码里恰好没有出现
+「注释里写 `PERM.XXX`」的情况，所以一直没被触发。
+
+修法：扫描前先 `stripComments()`。
+📌 这是本阶段第 4 次「接下一个前端时发现上一个实现里没人验证过的地方」。
+
+### 📌 双前端对账测了什么
+
+```
+🔴 生成产物逐字节相同：permissions.ts、enforced-perms.json
+🟢 测试基建逐字节相同：msw/handlers、msw/server、fixtures
+🟢 请求层去掉注释后相同：csrf、errorHandlers、admin、tickets、auth/api
+```
+
+⚠️ 最后一组**不要求逐字节相同**（Vue 版注释里记了更多实测发现），
+但**去掉注释后的代码**必须相同。
+
+> 这正是 [V-ADR-001](../02-设计文档.md)「不抽公共包」的意义：
+> **要证明两边一样，必须让它们真的各写一份，然后 diff。**
+> 抽成公共包等于把结论藏进了工程结构里。
+>
+> 而且这几条断言让结论变成**活的**：哪天有人改动其中一份，
+> 这条就会红——到时候要么同步另一份，要么承认「它其实与框架有关」并改文档。
+
+### 📌 一条只有覆盖率能发现的缺口
+
+`menuAdapter.ts` 的 `functions` 卡在 88.88%，缺的是 `.sort()` 的比较函数——
+它**只在两条前缀同时匹配时才执行**，而那正是「取最长的」这条规则存在的理由。
+
+补上 `/system` 与 `/system/users` 同时匹配的用例之后才达标。
+
+> ⚠️ 没有这条用例的话：比较函数一次都不跑，**把它写反（`a - b`）测试照样全绿**。
+> 覆盖率在这里的作用不是「数字好看」，而是**指出了一条没被执行过的规则**。
+
+**结果**：103 个单测、13 个文件全绿，全部按文件阈值达标。
+整体覆盖率 ~17%（页面交给 E2E，同 React 版的取舍）。
 
 ---
 
