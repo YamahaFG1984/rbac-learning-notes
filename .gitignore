@@ -9,3 +9,4 @@ staticfiles/
 .coverage
 htmlcov/
 *.egg-info/
+_site/
